@@ -1,0 +1,125 @@
+<resources>
+
+    <!-- Base application theme -->
+    <style name="AppTheme" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorSecondary">@color/colorSecondary</item>
+        <item name="colorSurface">@color/colorSurface</item>
+        <item name="android:colorBackground">@color/colorBackground</item>
+        <item name="colorOnPrimary">@color/colorOnPrimary</item>
+        <item name="colorOnSurface">@color/colorOnSurface</item>
+        <item name="colorError">@color/colorError</item>
+        <item name="android:statusBarColor">@color/colorPrimaryDark</item>
+        <item name="android:navigationBarColor">@color/colorPrimaryDark</item>
+        <item name="preferenceTheme">@style/AppTheme.Preference</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <style name="AppTheme.AppBarOverlay" parent="ThemeOverlay.MaterialComponents.Dark.ActionBar" />
+    <style name="AppTheme.PopupOverlay" parent="ThemeOverlay.MaterialComponents.Light" />
+
+    <!-- Preference theme for SettingsActivity -->
+    <style name="AppTheme.Preference" parent="PreferenceThemeOverlay">
+        <item name="android:textColor">@color/colorOnSurface</item>
+    </style>
+
+    <!-- Card style -->
+    <style name="Widget.ProxSox.Card" parent="Widget.MaterialComponents.CardView">
+        <item name="cardBackgroundColor">@color/colorSurface</item>
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="strokeColor">@color/colorStroke</item>
+    </style>
+
+    <!-- Connect button -->
+    <style name="Widget.ProxSox.Button.Connect" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@color/colorSecondary</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="android:textColor">@color/colorPrimary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <!-- Disconnect button -->
+    <style name="Widget.ProxSox.Button.Disconnect" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@color/colorError</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <!-- Text button style -->
+    <style name="Widget.ProxSox.Button.Text" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:textColor">@color/colorSecondary</item>
+        <item name="rippleColor">@color/colorSecondary</item>
+    </style>
+
+    <!-- Outlined input style -->
+    <style name="Widget.ProxSox.TextInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+        <item name="boxStrokeColor">@color/colorSecondary</item>
+        <item name="boxStrokeWidth">1dp</item>
+        <item name="boxStrokeWidthFocused">2dp</item>
+        <item name="hintTextColor">@color/colorSecondary</item>
+        <item name="android:textColorHint">@color/colorOnBackground</item>
+        <item name="boxBackgroundColor">@color/colorInputBackground</item>
+        <item name="boxCornerRadiusTopStart">8dp</item>
+        <item name="boxCornerRadiusTopEnd">8dp</item>
+        <item name="boxCornerRadiusBottomStart">8dp</item>
+        <item name="boxCornerRadiusBottomEnd">8dp</item>
+    </style>
+
+    <!-- Dialog theme -->
+    <style name="Widget.ProxSox.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorSurface">@color/colorSurface</item>
+        <item name="colorOnSurface">@color/colorOnSurface</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/Widget.ProxSox.Dialog.Title</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/Widget.ProxSox.Dialog.Body</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.ProxSox.Dialog.Button.Positive</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.ProxSox.Dialog.Button.Negative</item>
+    </style>
+
+    <style name="Widget.ProxSox.Dialog.Title" parent="MaterialAlertDialog.MaterialComponents.Title.Text">
+        <item name="android:textColor">@color/colorOnSurface</item>
+    </style>
+
+    <style name="Widget.ProxSox.Dialog.Body" parent="MaterialAlertDialog.MaterialComponents.Body.Text">
+        <item name="android:textColor">@color/colorOnBackground</item>
+    </style>
+
+    <style name="Widget.ProxSox.Dialog.Button.Positive" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/colorError</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.ProxSox.Dialog.Button.Negative" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/colorSecondary</item>
+    </style>
+
+    <!-- General dialog (non-destructive) -->
+    <style name="Widget.ProxSox.Dialog.Default" parent="Widget.ProxSox.Dialog">
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.ProxSox.Dialog.Button.DefaultPositive</item>
+    </style>
+
+    <style name="Widget.ProxSox.Dialog.Button.DefaultPositive" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/colorSecondary</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- Toggle button style for protocol selector -->
+    <style name="Widget.ProxSox.ToggleButton" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="android:textColor">@color/toggle_text_color</item>
+        <item name="strokeColor">@color/toggle_stroke_color</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="backgroundTint">@color/toggle_bg_tint</item>
+        <item name="rippleColor">@color/colorSecondary</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+</resources>

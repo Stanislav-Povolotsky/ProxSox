@@ -1,0 +1,75 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "splabs.proxsox"
+        minSdkVersion 23
+        targetSdkVersion 34
+        versionCode project.hasProperty('VERSION_CODE') ? VERSION_CODE.toInteger() : 1
+        versionName VERSION_NAME
+    }
+    signingConfigs {
+        debug {
+        }
+        release {
+            // Properties are supplied via -P flags or gradle.properties.
+            // When absent the block is left empty and the release build will be unsigned.
+            if (project.hasProperty('productKeyStore') && productKeyStore?.trim()) {
+                storeFile file(productKeyStore)
+                keyAlias productKeyAlias
+                storePassword productKeyStorePassword
+                keyPassword productKeyAliasPassword
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            minifyEnabled false
+            shrinkResources false
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Only attach the signing config when keystore credentials are actually present.
+            if (project.hasProperty('productKeyStore') && productKeyStore?.trim()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    applicationVariants.all { variant ->
+        if (variant.buildType.name.equals("release")) {
+            variant.outputs.all {
+                if (outputFileName != null && outputFileName.endsWith('.apk')) {
+                    def versionName = defaultConfig.versionName
+                    outputFileName = "${APP_NAME}_v${versionName}.apk"
+                }
+            }
+        }
+    }
+
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+
+    implementation 'androidx.preference:preference:1.1.1'
+    implementation 'androidx.appcompat:appcompat:1.2.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
+    implementation 'androidx.vectordrawable:vectordrawable:1.1.0'
+    implementation 'com.google.android.material:material:1.6.1'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.security:security-crypto:1.0.0'
+    implementation 'com.google.zxing:core:3.5.2'
+}

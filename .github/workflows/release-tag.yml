@@ -1,0 +1,65 @@
+name: Create Release Tag
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so all tags are available
+
+      - name: Read MAJOR.MINOR from VERSION.txt
+        id: version
+        run: |
+          MAJOR_MINOR=$(cat VERSION.txt | tr -d '[:space:]')
+          echo "major_minor=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
+          echo "Version base: $MAJOR_MINOR"
+
+      - name: Determine next build number
+        id: next_build
+        run: |
+          MAJOR_MINOR="${{ steps.version.outputs.major_minor }}"
+
+          # List tags matching vMAJOR.MINOR.<build>, extract the build part, pick the max
+          LAST_BUILD=$(
+            git tag -l "v${MAJOR_MINOR}.*" \
+              | awk -F'.' '{print $NF}' \
+              | grep -E '^[0-9]+$' \
+              | sort -n \
+              | tail -1
+          )
+
+          if [[ -z "$LAST_BUILD" ]]; then
+            NEXT_BUILD=1
+          else
+            NEXT_BUILD=$(( LAST_BUILD + 1 ))
+          fi
+
+          NEW_TAG="v${MAJOR_MINOR}.${NEXT_BUILD}"
+          echo "build=$NEXT_BUILD"   >> "$GITHUB_OUTPUT"
+          echo "tag=$NEW_TAG"        >> "$GITHUB_OUTPUT"
+          echo "New tag: $NEW_TAG (build $NEXT_BUILD)"
+
+      - name: Create and push tag on master
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.next_build.outputs.tag }}"
+          git push origin "${{ steps.next_build.outputs.tag }}"
+
+      - name: Job summary
+        run: |
+          echo "### :rocket: Release Tag Created" >> "$GITHUB_STEP_SUMMARY"
+          echo ""                                  >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |"                 >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|"                          >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag | \`${{ steps.next_build.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build # | ${{ steps.next_build.outputs.build }} |" >> "$GITHUB_STEP_SUMMARY"

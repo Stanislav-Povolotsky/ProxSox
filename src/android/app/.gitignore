@@ -1,0 +1,8 @@
+/build
+.cxx
+.externalNativeBuild
+
+# Built at build time — do not commit
+libs/tun2socks.aar
+libs/.tun2socks.version
+
