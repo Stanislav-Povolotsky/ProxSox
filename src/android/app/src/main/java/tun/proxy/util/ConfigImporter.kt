@@ -66,9 +66,10 @@ object ConfigImporter {
             id = UUID.randomUUID().toString(),
             name = name,
             protocol = when {
-                protocol.startsWith("socks5h") -> "socks5h"
+                protocol.startsWith("socks5h") -> "socks5"
                 protocol.contains("socks")     -> "socks5"
-                else                           -> "http"
+                protocol == "http"             -> "http"
+                else                           -> "socks5"
             },
             host = host,
             port = port,

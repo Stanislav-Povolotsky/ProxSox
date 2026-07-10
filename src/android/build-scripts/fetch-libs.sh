@@ -64,7 +64,7 @@ trap 'rm -rf "$TMP"' EXIT
 echo "[fetch-libs] Cloning xjasonlyu/tun2socks ${TUN2SOCKS_VERSION}..."
 git clone --depth 1 \
     --branch "$TUN2SOCKS_VERSION" \
-    https://github.com/xjasonlyu/tun2socks.git \
+    https://github.com/Stanislav-Povolotsky/tun2socks.git \
     "$TMP/tun2socks"
 echo "[fetch-libs] Cloned to $TMP/tun2socks"
 

@@ -50,6 +50,7 @@ buck-out/
 /*.save
 git-push
 /build-output
+/temp
 
 # Ignore Gradle build output directory
 build

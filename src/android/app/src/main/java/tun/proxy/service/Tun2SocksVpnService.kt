@@ -122,8 +122,9 @@ class Tun2SocksVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand: action {intent?.action} flags ${flags} startId {startId}")
+        Log.d(TAG, "onStartCommand: action ${intent?.action} flags ${flags} startId ${startId}")
         if (intent?.action == ACTION_STOP_SERVICE) {
+            Log.d(TAG, "onStartCommand: stop service")
             isStopping = true
             stopVpn()
             utils?.setVpnStatus(false)
@@ -172,8 +173,10 @@ class Tun2SocksVpnService : VpnService() {
         vpnThread = object : Thread("VpnThread") {
             override fun run() {
                 try {
+                    Log.d(TAG, "VpnThread started")
                     utils?.setVpnStatus(true)
                     startVpn(data)
+                    Log.d(TAG, "VpnThread finished")
                 } catch (e: Exception) {
                     Log.e(TAG, "vpnThread: fail", e)
                     utils?.setVpnStatus(false)
@@ -184,6 +187,7 @@ class Tun2SocksVpnService : VpnService() {
         vpnThread?.start()
 
         startForeground(1, buildNotification(data))
+        Log.d(TAG, "onStartCommand: start sticky")
         return START_STICKY
     }
 
@@ -237,6 +241,7 @@ class Tun2SocksVpnService : VpnService() {
     }
 
     private fun startVpn(proxyDetails: String) {
+        Log.d(TAG, "startVpn ${proxyDetails}")
         proxyData = proxyDetails
 
         // Read Remote DNS configuration from default SharedPreferences
@@ -276,17 +281,20 @@ class Tun2SocksVpnService : VpnService() {
         builder.addDisallowedApplication(packageName)
 
         try {
+            Log.d(TAG, "startVpn pre establish")
             vpnInterface = builder.establish()
             if (vpnInterface == null) {
                 Log.e(TAG, "vpnInterface: establish failed")
                 broadcastState(VpnState.FAILED, "Failed to establish VPN interface")
                 return
             }
+            Log.d(TAG, "startVpn post establish")
 
             // Detach the fd so ParcelFileDescriptor no longer owns it —
             // the tun2socks engine takes ownership and will handle cleanup
             val fd = vpnInterface?.detachFd() ?: return
             vpnInterface = null
+            Log.d(TAG, "startVpn fd ${fd}")
 
             // If Remote DNS is on, start local translating proxy and redirect tun2socks
             val effectiveProxy: String
@@ -310,18 +318,22 @@ class Tun2SocksVpnService : VpnService() {
             key.mtu = 1500
             key.device = "fd://$fd"
             key.setInterface("")
-            key.logLevel = "warning"
+            key.logLevel = if (BuildConfig.DEBUG) "debug" else "silent"
             key.proxy = effectiveProxy
             key.restAPI = ""
             key.tcpSendBufferSize = ""
             key.tcpReceiveBufferSize = ""
             key.tcpModerateReceiveBuffer = false
             Engine.insert(key)
+            Log.d(TAG, "startVpn starting engine")
             Engine.start()
+            Log.d(TAG, "startVpn engine started")
             utils?.setProxyName(serviceName)
             broadcastState(VpnState.CONNECTED)
             // Block until stop signal — no timeout, runs indefinitely
+            Log.d(TAG, "startVpn is waiting for stop signal")
             stopSignal.await()
+            Log.d(TAG, "startVpn catched wait signal")
         } catch (e: Exception) {
             Log.e(TAG, "startEngine: error ${e.message}")
             if (!isStopping) {
@@ -362,6 +374,7 @@ class Tun2SocksVpnService : VpnService() {
     }
 
     private fun stopVpn() {
+        Log.d(TAG, "stopVpn")
         try {
             stopSignal.countDown()
             val thread = vpnThread
@@ -383,6 +396,7 @@ class Tun2SocksVpnService : VpnService() {
 
     private fun broadcastState(state: VpnState, errorMsg: String? = null) {
         isActive = (state == VpnState.CONNECTED || state == VpnState.CONNECTING)
+        Log.d(TAG, "broadcastState isActive ${isActive}")
         val intent = Intent(ACTION_VPN_STATE_CHANGED).apply {
             setPackage(packageName)
             putExtra(EXTRA_VPN_STATE, state.name)
@@ -393,6 +407,7 @@ class Tun2SocksVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        Log.d(TAG, "onRevoke")
         isStopping = true
         stopVpn()
         utils?.setVpnStatus(false)
@@ -408,6 +423,7 @@ class Tun2SocksVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy")
         networkMonitor?.stop()
         releaseWakeLock()
         if (isStopping) {
