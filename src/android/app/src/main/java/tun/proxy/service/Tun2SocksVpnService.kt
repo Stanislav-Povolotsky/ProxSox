@@ -43,10 +43,6 @@ class Tun2SocksVpnService : VpnService() {
     private var networkMonitor: NetworkMonitor? = null
     private var failoverProxy: String? = null
 
-    // Remote DNS
-    private var remoteDnsProxy: RemoteDnsProxyServer? = null
-    private var fakeDnsDb: FakeDnsDatabase? = null
-
     companion object {
         const val ACTION_STOP_SERVICE = "${BuildConfig.APPLICATION_ID}.STOP_VPN_SERVICE"
         private const val PREF_LAST_PROXY = "last_proxy_data"
@@ -247,8 +243,8 @@ class Tun2SocksVpnService : VpnService() {
         // Read Remote DNS configuration from default SharedPreferences
         val defaultPrefs = PreferenceManager.getDefaultSharedPreferences(this)
         val remoteDnsEnabled = defaultPrefs.getBoolean(PREF_REMOTE_DNS_ENABLED, false)
-        val fakeSubnet       = defaultPrefs.getString(PREF_FAKE_IP_SUBNET, DEFAULT_FAKE_IP_SUBNET)
-                               ?: DEFAULT_FAKE_IP_SUBNET
+        val fakeSubnet = defaultPrefs.getString(PREF_FAKE_IP_SUBNET, DEFAULT_FAKE_IP_SUBNET)
+                         ?: DEFAULT_FAKE_IP_SUBNET
 
         val builder = Builder()
             .addAddress("10.1.10.1", 32)
@@ -259,7 +255,11 @@ class Tun2SocksVpnService : VpnService() {
             .setSession(getString(R.string.app_name))
 
         if (remoteDnsEnabled) {
-            // Direct all app DNS queries to our fake DNS interceptor
+            // Direct all app DNS queries to tun2socks's built-in fake DNS
+            // resolver (see Key.fakeDNS* below), which hands out fake IPs
+            // and resolves them back to the original hostname when the app
+            // later connects, so the proxy — not the local resolver — does
+            // the real DNS resolution.
             builder.addDnsServer(FAKE_DNS_SERVER_IP)
         }
 
@@ -296,30 +296,16 @@ class Tun2SocksVpnService : VpnService() {
             vpnInterface = null
             Log.d(TAG, "startVpn fd ${fd}")
 
-            // If Remote DNS is on, start local translating proxy and redirect tun2socks
-            val effectiveProxy: String
-            if (remoteDnsEnabled) {
-                val db  = FakeDnsDatabase(fakeSubnet).also { fakeDnsDb = it }
-                val rdp = RemoteDnsProxyServer(
-                    realProxyUrl    = proxyDetails,
-                    fakeDnsDb       = db,
-                    fakeDnsServerIp = FAKE_DNS_SERVER_IP,
-                    dnsHandler      = FakeDnsPacketHandler(db)
-                ).also { remoteDnsProxy = it }
-                val localPort = rdp.start()
-                effectiveProxy = "socks5://127.0.0.1:$localPort"
-                Log.i(TAG, "Remote DNS on — local proxy at port $localPort, subnet $fakeSubnet")
-            } else {
-                effectiveProxy = proxyDetails
-            }
-
             val key = Key()
             key.mark = 0
             key.mtu = 1500
             key.device = "fd://$fd"
             key.setInterface("")
             key.logLevel = if (BuildConfig.DEBUG) "debug" else "silent"
-            key.proxy = effectiveProxy
+            key.proxy = proxyDetails
+            key.fakeDNS = remoteDnsEnabled
+            key.fakeDNSNetIPv4 = fakeSubnet
+            key.fakeDNSListenAddress = "$FAKE_DNS_SERVER_IP:53"
             key.restAPI = ""
             key.tcpSendBufferSize = ""
             key.tcpReceiveBufferSize = ""
@@ -359,11 +345,6 @@ class Tun2SocksVpnService : VpnService() {
             } catch (e: Exception) {
                 Log.w(TAG, "Engine.stop() error: ${e.message}")
             }
-            // Stop Remote DNS proxy and clear fake DNS database
-            remoteDnsProxy?.stop()
-            remoteDnsProxy = null
-            fakeDnsDb?.clear()
-            fakeDnsDb = null
             // vpnInterface was detached (fd ownership transferred to engine),
             // so no close() needed here
             utils?.setVpnStatus(false)
