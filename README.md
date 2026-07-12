@@ -186,7 +186,7 @@ android_app/
 
 - [TunProxy](https://github.com/raise-isayan/TunProxy)
 - [appproxy](https://github.com/ys1231/appproxy)
-- [ProxSox](https://github.com/jayluxferro/ProxSox)
+- [ProxyMe](https://github.com/jayluxferro/ProxyMe)
 
 ## License
 
