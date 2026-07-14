@@ -78,12 +78,13 @@ The app accepts proxy addresses in several formats:
 
 | Format | Example |
 |--------|---------|
-| Host and port (defaults to HTTP) | `10.10.10.1:8080` |
+| Host and port (defaults to SOCKS5) | `10.10.10.1:1080` |
+| Host and port (defaults to HTTP) | `10.10.10.2:8080` |
+| SOCKS5 | `socks5://10.10.10.1:8080` |
+| SOCKS5 with auth | `socks5://user:pass@10.10.10.1:8080` |
 | Hostname and port | `proxy.example.com:8080` |
 | HTTP | `http://10.10.10.1:8080` |
-| SOCKS5 | `socks5://10.10.10.1:8080` |
 | HTTP with auth | `http://user:pass@10.10.10.1:8080` |
-| SOCKS5 with auth | `socks5://user:pass@10.10.10.1:8080` |
 
 ### Saved Configurations
 
