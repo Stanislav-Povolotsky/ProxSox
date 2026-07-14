@@ -32,7 +32,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.snackbar.Snackbar
@@ -41,11 +40,14 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import android.view.inputmethod.InputMethodManager
+import android.widget.AutoCompleteTextView
 import android.widget.ImageView
 import tun.proxy.adapter.ConnectionLogAdapter
 import tun.proxy.adapter.SavedConfigsAdapter
 import tun.proxy.model.ProxyConfig
 import tun.proxy.model.ProxyData
+import tun.proxy.model.ProxyProtocol
+import tun.proxy.model.SHADOWSOCKS_CIPHERS
 import tun.proxy.model.ConnectionEvent
 import tun.proxy.repository.ConfigRepository
 import tun.proxy.repository.ConnectionLogRepository
@@ -56,6 +58,7 @@ import tun.proxy.service.ProxyRotationManager
 import tun.proxy.util.ClipboardProxyDetector
 import tun.proxy.util.ConfigImporter
 import tun.proxy.util.ProxyHealthCheck
+import tun.proxy.util.ProxyUrlBuilder
 import tun.proxy.util.QrGenerator
 import tun.proxy.service.ACTION_VPN_STATE_CHANGED
 import tun.proxy.service.EXTRA_ERROR_MESSAGE
@@ -77,6 +80,7 @@ class MainActivity : AppCompatActivity(),
     private lateinit var statusText: TextView
     private lateinit var statusProxy: TextView
     private lateinit var statusProgress: CircularProgressIndicator
+    private lateinit var btnRecheckProxy: MaterialButton
     private lateinit var btnSave: MaterialButton
     private lateinit var btnLoad: MaterialButton
     private lateinit var containerView: View
@@ -89,6 +93,7 @@ class MainActivity : AppCompatActivity(),
     private val TAG = "MainActivity"
     private val VPN_REQUEST_CODE = 100
     private val REQUEST_NOTIFICATION_PERMISSION = 1231
+    private val REQUEST_IMPORT_SSH_KEY = 1300
     private var intentVPNService: Intent? = null
     private val PREF_USER_CONFIG = "pref_user_config"
     private val PREF_FORMATTED_CONFIG = "pref_formatted_config"
@@ -96,6 +101,11 @@ class MainActivity : AppCompatActivity(),
 
     private var currentVpnState = VpnState.DISCONNECTED
     private var pendingProxy: String? = null
+    // Saved-config backing hostEditText's current value, if any -- used so
+    // SSH-with-key configs (which can't be fully expressed as one string)
+    // get their key file re-materialized right before connecting.
+    private var loadedConfigId: String? = null
+    private var pendingKeyImportCallback: ((String) -> Unit)? = null
     private lateinit var clipboardDetector: ClipboardProxyDetector
     private lateinit var rotationManager: ProxyRotationManager
     private var lastDeletedConfig: ProxyConfig? = null
@@ -128,6 +138,12 @@ class MainActivity : AppCompatActivity(),
         statusText = findViewById(R.id.status_text)
         statusProxy = findViewById(R.id.status_proxy)
         statusProgress = findViewById(R.id.status_progress)
+        btnRecheckProxy = findViewById(R.id.btn_recheck_proxy)
+        btnRecheckProxy.setOnClickListener {
+            startService(Intent(this, Tun2SocksVpnService::class.java).apply {
+                action = Tun2SocksVpnService.ACTION_RECHECK_PROXY
+            })
+        }
         btnSave = findViewById(R.id.btn_save)
         btnLoad = findViewById(R.id.btn_load)
         remoteDnsSwitch = findViewById(R.id.switch_remote_dns)
@@ -161,9 +177,18 @@ class MainActivity : AppCompatActivity(),
         handleDeepLink(intent)
 
         startButton.setOnClickListener {
-            val proxy = parseProxy()
-            if (proxy != null) {
-                startVpn(proxy)
+            // SSH-with-key configs can't be represented as a plain string in
+            // hostEditText (see showAddEditConfigSheet) -- if one is loaded,
+            // rebuild its connection string fresh (re-materializing the key
+            // file) instead of parsing the display text.
+            val loadedConfig = loadedConfigId?.let { configRepository.getById(it) }
+            if (loadedConfig != null && loadedConfig.requiresKeyFile) {
+                startVpn(ProxyUrlBuilder.build(this, loadedConfig))
+            } else {
+                val proxy = parseProxy()
+                if (proxy != null) {
+                    startVpn(proxy)
+                }
             }
         }
         stopButton.setOnClickListener { confirmDisconnect() }
@@ -220,16 +245,23 @@ class MainActivity : AppCompatActivity(),
 
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val rawConfig = prefs.getString(PREF_FORMATTED_CONFIG, "") ?: ""
-        val protocol = when {
-            rawConfig.startsWith("socks5h://") -> "socks5h"
-            rawConfig.startsWith("socks5://")  -> "socks5"
-            else -> "http"
-        }
+        val protocol = detectProtocolFromUrl(rawConfig)
 
         when (state) {
             VpnState.CONNECTED -> {
                 connectStartTime = System.currentTimeMillis()
                 logRepository.log(ConnectionEvent(System.currentTimeMillis(), "Connected", protocol))
+            }
+            VpnState.CONNECTED_UNVERIFIED -> {
+                if (connectStartTime == 0L) connectStartTime = System.currentTimeMillis()
+                logRepository.log(ConnectionEvent(System.currentTimeMillis(), "Connected (proxy unreachable)", protocol))
+                Snackbar.make(containerView, R.string.status_proxy_unreachable_detail, Snackbar.LENGTH_LONG)
+                    .setAction(R.string.btn_recheck) {
+                        startService(Intent(this, Tun2SocksVpnService::class.java).apply {
+                            action = Tun2SocksVpnService.ACTION_RECHECK_PROXY
+                        })
+                    }
+                    .show()
             }
             VpnState.DISCONNECTED -> {
                 val duration = if (connectStartTime > 0) System.currentTimeMillis() - connectStartTime else null
@@ -244,9 +276,23 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
+    private fun currentProxyLabel(): String {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val rawConfig = prefs.getString(PREF_FORMATTED_CONFIG, "") ?: ""
+        if (rawConfig.isEmpty()) return ""
+        // Show rotation status if active, otherwise just the protocol type (not the address)
+        val rotState = rotationManager.getState()
+        return if (rotState.enabled && rotState.configIds.size > 1) {
+            getString(R.string.rotation_status_active, rotState.currentIndex + 1, rotState.configIds.size)
+        } else {
+            "${protocolDisplayName(ProxyProtocol.fromScheme(detectProtocolFromUrl(rawConfig)))} Proxy"
+        }
+    }
+
     private fun applyVpnStateToUI(state: VpnState) {
         currentVpnState = state
         val dotDrawable = statusDot.background
+        btnRecheckProxy.visibility = if (state == VpnState.CONNECTED_UNVERIFIED) View.VISIBLE else View.GONE
         when (state) {
             VpnState.DISCONNECTED -> {
                 startButton.visibility = View.VISIBLE
@@ -288,24 +334,27 @@ class MainActivity : AppCompatActivity(),
                 }
                 statusText.text = getString(R.string.status_connected)
                 statusText.setTextColor(ContextCompat.getColor(this, R.color.colorSuccess))
-                val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-                val rawConfig = prefs.getString(PREF_FORMATTED_CONFIG, "") ?: ""
-                // Show only protocol type, not the address
-                val proxyLabel = when {
-                    rawConfig.startsWith("socks5h://") -> "SOCKS5H Proxy"
-                    rawConfig.startsWith("socks5://") -> "SOCKS5 Proxy"
-                    rawConfig.startsWith("http://") -> "HTTP Proxy"
-                    rawConfig.isNotEmpty() -> "Proxy"
-                    else -> ""
+                val label = currentProxyLabel()
+                statusProxy.text = label
+                statusProxy.visibility = if (label.isEmpty()) View.GONE else View.VISIBLE
+            }
+            VpnState.CONNECTED_UNVERIFIED -> {
+                // Tunnel is up (Stop still works), but the proxy didn't answer --
+                // don't pretend everything is fine, but don't tear the tunnel
+                // down either; let the user retry or disconnect manually.
+                startButton.visibility = View.GONE
+                stopButton.visibility = View.VISIBLE
+                hostEditText.isEnabled = false
+                btnSave.isEnabled = false
+                remoteDnsSwitch.isEnabled = false
+                statusDot.visibility = View.VISIBLE
+                statusProgress.visibility = View.GONE
+                if (dotDrawable is GradientDrawable) {
+                    dotDrawable.setColor(ContextCompat.getColor(this, R.color.colorWarning))
                 }
-                // Show rotation status if active
-                val rotState = rotationManager.getState()
-                val label = if (rotState.enabled && rotState.configIds.size > 1) {
-                    val idx = rotState.currentIndex + 1
-                    getString(R.string.rotation_status_active, idx, rotState.configIds.size)
-                } else {
-                    proxyLabel
-                }
+                statusText.text = getString(R.string.status_connected_unverified)
+                statusText.setTextColor(ContextCompat.getColor(this, R.color.colorWarning))
+                val label = currentProxyLabel()
                 statusProxy.text = label
                 statusProxy.visibility = if (label.isEmpty()) View.GONE else View.VISIBLE
             }
@@ -338,6 +387,23 @@ class MainActivity : AppCompatActivity(),
 
     // --- Add/Edit Configuration Sheet ---
 
+    private fun protocolDisplayName(protocol: ProxyProtocol): String = when (protocol) {
+        ProxyProtocol.HTTP -> getString(R.string.badge_http)
+        ProxyProtocol.SOCKS4 -> getString(R.string.badge_socks4)
+        ProxyProtocol.SOCKS5 -> getString(R.string.badge_socks5)
+        ProxyProtocol.SOCKS5H -> getString(R.string.badge_socks5h)
+        ProxyProtocol.SHADOWSOCKS -> getString(R.string.badge_ss)
+        ProxyProtocol.SSH -> getString(R.string.badge_ssh)
+        ProxyProtocol.RELAY -> getString(R.string.badge_relay)
+    }
+
+    private fun looksLikePrivateKey(text: String): Boolean =
+        text.contains("-----BEGIN") && text.contains("PRIVATE KEY-----")
+
+    private val PROTOCOLS_WITH_GENERIC_AUTH = setOf(
+        ProxyProtocol.HTTP, ProxyProtocol.SOCKS5, ProxyProtocol.SOCKS5H, ProxyProtocol.RELAY
+    )
+
     fun showAddEditConfigSheet(config: ProxyConfig? = null, prefillFromInput: Boolean = false) {
         savedConfigsSheet?.dismiss()
 
@@ -345,17 +411,43 @@ class MainActivity : AppCompatActivity(),
         val view = LayoutInflater.from(this).inflate(R.layout.bottom_sheet_add_config, null)
 
         val title = view.findViewById<TextView>(R.id.sheet_title)
-        val protocolToggle = view.findViewById<MaterialButtonToggleGroup>(R.id.protocol_toggle)
+        val protocolDropdown = view.findViewById<AutoCompleteTextView>(R.id.protocol_dropdown)
         val hostInput = view.findViewById<TextInputEditText>(R.id.input_host)
         val hostLayout = view.findViewById<TextInputLayout>(R.id.input_host_layout)
         val portInput = view.findViewById<TextInputEditText>(R.id.input_port)
         val portLayout = view.findViewById<TextInputLayout>(R.id.input_port_layout)
+
+        val groupAuth = view.findViewById<View>(R.id.group_auth)
         val authSwitch = view.findViewById<SwitchMaterial>(R.id.auth_switch)
         val authFields = view.findViewById<View>(R.id.auth_fields)
         val usernameInput = view.findViewById<TextInputEditText>(R.id.input_username)
         val usernameLayout = view.findViewById<TextInputLayout>(R.id.input_username_layout)
         val passwordInput = view.findViewById<TextInputEditText>(R.id.input_password)
         val passwordLayout = view.findViewById<TextInputLayout>(R.id.input_password_layout)
+
+        val groupSocks4 = view.findViewById<View>(R.id.group_socks4)
+        val socks4UserIdInput = view.findViewById<TextInputEditText>(R.id.input_socks4_userid)
+
+        val groupSs = view.findViewById<View>(R.id.group_ss)
+        val ssCipherLayout = view.findViewById<TextInputLayout>(R.id.ss_cipher_layout)
+        val ssCipherDropdown = view.findViewById<AutoCompleteTextView>(R.id.ss_cipher_dropdown)
+        val ssPasswordInput = view.findViewById<TextInputEditText>(R.id.input_ss_password)
+        val ssPasswordLayout = view.findViewById<TextInputLayout>(R.id.input_ss_password_layout)
+
+        val groupSsh = view.findViewById<View>(R.id.group_ssh)
+        val sshUsernameInput = view.findViewById<TextInputEditText>(R.id.input_ssh_username)
+        val sshUsernameLayout = view.findViewById<TextInputLayout>(R.id.input_ssh_username_layout)
+        val sshPasswordInput = view.findViewById<TextInputEditText>(R.id.input_ssh_password)
+        val sshUseKeySwitch = view.findViewById<SwitchMaterial>(R.id.ssh_use_key_switch)
+        val sshKeyFields = view.findViewById<View>(R.id.ssh_key_fields)
+        val sshKeyInput = view.findViewById<TextInputEditText>(R.id.input_ssh_key)
+        val sshKeyLayout = view.findViewById<TextInputLayout>(R.id.input_ssh_key_layout)
+        val btnImportKeyFile = view.findViewById<MaterialButton>(R.id.btn_import_key_file)
+        val sshPassphraseInput = view.findViewById<TextInputEditText>(R.id.input_ssh_passphrase)
+
+        val groupRelayAdvanced = view.findViewById<View>(R.id.group_relay_advanced)
+        val relayNoDelaySwitch = view.findViewById<SwitchMaterial>(R.id.relay_nodelay_switch)
+
         val nameInput = view.findViewById<TextInputEditText>(R.id.input_name)
         val nameLayout = view.findViewById<TextInputLayout>(R.id.input_name_layout)
         val btnCancel = view.findViewById<MaterialButton>(R.id.btn_cancel)
@@ -364,29 +456,72 @@ class MainActivity : AppCompatActivity(),
         val isEdit = config != null
         title.text = getString(if (isEdit) R.string.edit_config_title else R.string.add_config_title)
 
+        val protocolValues = ProxyProtocol.values()
+        val protocolLabels = protocolValues.map { protocolDisplayName(it) }
+        protocolDropdown.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, protocolLabels))
+        ssCipherDropdown.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, SHADOWSOCKS_CIPHERS))
+
+        fun currentProtocol(): ProxyProtocol {
+            val idx = protocolLabels.indexOf(protocolDropdown.text?.toString())
+            return if (idx >= 0) protocolValues[idx] else ProxyProtocol.SOCKS5
+        }
+
+        fun applyProtocolVisibility(protocol: ProxyProtocol) {
+            groupAuth.visibility = if (protocol in PROTOCOLS_WITH_GENERIC_AUTH) View.VISIBLE else View.GONE
+            groupSocks4.visibility = if (protocol == ProxyProtocol.SOCKS4) View.VISIBLE else View.GONE
+            groupSs.visibility = if (protocol == ProxyProtocol.SHADOWSOCKS) View.VISIBLE else View.GONE
+            groupSsh.visibility = if (protocol == ProxyProtocol.SSH) View.VISIBLE else View.GONE
+            groupRelayAdvanced.visibility = if (protocol == ProxyProtocol.RELAY) View.VISIBLE else View.GONE
+        }
+
+        protocolDropdown.setOnItemClickListener { _, _, _, _ -> applyProtocolVisibility(currentProtocol()) }
+
+        val initialProtocol = when {
+            config != null -> ProxyProtocol.fromScheme(config.protocol)
+            prefillFromInput -> ProxyProtocol.fromScheme(parseProxyData()?.proxyType ?: "socks5")
+            else -> ProxyProtocol.SOCKS5
+        }
+        protocolDropdown.setText(protocolDisplayName(initialProtocol), false)
+        applyProtocolVisibility(initialProtocol)
+        if (ssCipherDropdown.text.isNullOrEmpty()) {
+            ssCipherDropdown.setText(SHADOWSOCKS_CIPHERS.first(), false)
+        }
+
         // Pre-fill from existing config
         if (config != null) {
-            protocolToggle.check(when (config.protocol) {
-                "socks5"  -> R.id.btn_socks5
-                "socks5h" -> R.id.btn_socks5h
-                else      -> R.id.btn_http
-            })
             hostInput.setText(config.host)
             portInput.setText(config.port.toString())
-            authSwitch.isChecked = config.authEnabled
-            authFields.visibility = if (config.authEnabled) View.VISIBLE else View.GONE
-            usernameInput.setText(config.username ?: "")
-            passwordInput.setText(config.password ?: "")
             nameInput.setText(config.name)
+            when (initialProtocol) {
+                ProxyProtocol.SOCKS4 -> {
+                    socks4UserIdInput.setText(config.username ?: "")
+                }
+                ProxyProtocol.SHADOWSOCKS -> {
+                    ssCipherDropdown.setText(config.ssCipher ?: SHADOWSOCKS_CIPHERS.first(), false)
+                    ssPasswordInput.setText(config.password ?: "")
+                }
+                ProxyProtocol.SSH -> {
+                    sshUsernameInput.setText(config.username ?: "")
+                    sshPasswordInput.setText(config.password ?: "")
+                    sshUseKeySwitch.isChecked = config.sshUseKey
+                    sshKeyFields.visibility = if (config.sshUseKey) View.VISIBLE else View.GONE
+                    sshKeyInput.setText(config.sshPrivateKeyPem ?: "")
+                    sshPassphraseInput.setText(config.sshPassphrase ?: "")
+                }
+                else -> {
+                    authSwitch.isChecked = config.authEnabled
+                    authFields.visibility = if (config.authEnabled) View.VISIBLE else View.GONE
+                    usernameInput.setText(config.username ?: "")
+                    passwordInput.setText(config.password ?: "")
+                    if (initialProtocol == ProxyProtocol.RELAY) {
+                        relayNoDelaySwitch.isChecked = config.relayNoDelay
+                    }
+                }
+            }
         } else if (prefillFromInput) {
-            // Try to parse the current proxy input and pre-fill
+            // Try to parse the current proxy input and pre-fill (generic-auth protocols only)
             val parsed = parseProxyData()
             if (parsed != null) {
-                protocolToggle.check(when (parsed.proxyType) {
-                    "socks5"  -> R.id.btn_socks5
-                    "socks5h" -> R.id.btn_socks5h
-                    else      -> R.id.btn_http
-                })
                 hostInput.setText(parsed.proxyHost)
                 portInput.setText(parsed.proxyPort.toString())
                 if (!parsed.proxyUser.isNullOrEmpty()) {
@@ -408,6 +543,28 @@ class MainActivity : AppCompatActivity(),
             }
         }
 
+        sshUseKeySwitch.setOnCheckedChangeListener { _, isChecked ->
+            sshKeyFields.visibility = if (isChecked) View.VISIBLE else View.GONE
+            if (!isChecked) sshKeyLayout.error = null
+        }
+
+        btnImportKeyFile.setOnClickListener {
+            pendingKeyImportCallback = { content -> sshKeyInput.setText(content) }
+            try {
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "*/*"
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+                startActivityForResult(
+                    Intent.createChooser(intent, getString(R.string.btn_import_key_file)),
+                    REQUEST_IMPORT_SSH_KEY
+                )
+            } catch (e: Exception) {
+                pendingKeyImportCallback = null
+                Snackbar.make(view, R.string.key_file_import_failed, Snackbar.LENGTH_SHORT).show()
+            }
+        }
+
         btnCancel.setOnClickListener { sheet.dismiss() }
 
         btnSave.setOnClickListener {
@@ -417,20 +574,16 @@ class MainActivity : AppCompatActivity(),
             usernameLayout.error = null
             passwordLayout.error = null
             nameLayout.error = null
+            ssCipherLayout.error = null
+            ssPasswordLayout.error = null
+            sshUsernameLayout.error = null
+            sshKeyLayout.error = null
 
+            val protocol = currentProtocol()
             val host = hostInput.text?.toString()?.trim() ?: ""
             val portStr = portInput.text?.toString()?.trim() ?: ""
             val name = nameInput.text?.toString()?.trim() ?: ""
-            val protocol = when (protocolToggle.checkedButtonId) {
-                R.id.btn_socks5  -> "socks5"
-                R.id.btn_socks5h -> "socks5h"
-                else             -> "http"
-            }
-            val authEnabled = authSwitch.isChecked
-            val username = usernameInput.text?.toString()?.trim()
-            val password = passwordInput.text?.toString()?.trim()
 
-            // Validate
             var valid = true
             if (host.isEmpty()) {
                 hostLayout.error = getString(R.string.error_host_required)
@@ -447,31 +600,96 @@ class MainActivity : AppCompatActivity(),
                 portLayout.error = getString(R.string.error_port_invalid)
                 valid = false
             }
-            if (authEnabled) {
-                if (username.isNullOrEmpty()) {
-                    usernameLayout.error = getString(R.string.error_username_required)
-                    valid = false
-                }
-                if (password.isNullOrEmpty()) {
-                    passwordLayout.error = getString(R.string.error_password_required)
-                    valid = false
-                }
-            }
             if (name.isEmpty()) {
                 nameLayout.error = getString(R.string.error_name_required)
                 valid = false
             }
+
+            var authEnabled = false
+            var username: String? = null
+            var password: String? = null
+            var ssCipher: String? = null
+            var sshUseKey = false
+            var sshPrivateKeyPem: String? = null
+            var sshPassphrase: String? = null
+            var relayNoDelay = false
+
+            when (protocol) {
+                ProxyProtocol.SOCKS4 -> {
+                    username = socks4UserIdInput.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    authEnabled = username != null
+                }
+                ProxyProtocol.SHADOWSOCKS -> {
+                    ssCipher = ssCipherDropdown.text?.toString()?.trim()
+                    if (ssCipher.isNullOrEmpty() || ssCipher !in SHADOWSOCKS_CIPHERS) {
+                        ssCipherLayout.error = getString(R.string.error_cipher_required)
+                        valid = false
+                    }
+                    password = ssPasswordInput.text?.toString()
+                    if (password.isNullOrEmpty()) {
+                        ssPasswordLayout.error = getString(R.string.error_ss_password_required)
+                        valid = false
+                    }
+                    authEnabled = true
+                }
+                ProxyProtocol.SSH -> {
+                    username = sshUsernameInput.text?.toString()?.trim()
+                    if (username.isNullOrEmpty()) {
+                        sshUsernameLayout.error = getString(R.string.error_ssh_username_required)
+                        valid = false
+                    }
+                    password = sshPasswordInput.text?.toString()?.takeIf { it.isNotEmpty() }
+                    sshUseKey = sshUseKeySwitch.isChecked
+                    if (sshUseKey) {
+                        sshPrivateKeyPem = sshKeyInput.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                        if (sshPrivateKeyPem == null || !looksLikePrivateKey(sshPrivateKeyPem)) {
+                            sshKeyLayout.error = getString(R.string.error_ssh_key_invalid)
+                            valid = false
+                        }
+                        sshPassphrase = sshPassphraseInput.text?.toString()?.takeIf { it.isNotEmpty() }
+                    }
+                    authEnabled = password != null
+                    if (password.isNullOrEmpty() && !sshUseKey) {
+                        sshUsernameLayout.error = getString(R.string.error_ssh_auth_required)
+                        valid = false
+                    }
+                }
+                else -> {
+                    authEnabled = authSwitch.isChecked
+                    username = usernameInput.text?.toString()?.trim()
+                    password = passwordInput.text?.toString()?.trim()
+                    if (authEnabled) {
+                        if (username.isNullOrEmpty()) {
+                            usernameLayout.error = getString(R.string.error_username_required)
+                            valid = false
+                        }
+                        if (password.isNullOrEmpty()) {
+                            passwordLayout.error = getString(R.string.error_password_required)
+                            valid = false
+                        }
+                    }
+                    if (protocol == ProxyProtocol.RELAY) {
+                        relayNoDelay = relayNoDelaySwitch.isChecked
+                    }
+                }
+            }
+
             if (!valid || port == null) return@setOnClickListener
 
             val newConfig = ProxyConfig(
                 id = config?.id ?: UUID.randomUUID().toString(),
                 name = name,
-                protocol = protocol,
+                protocol = protocol.scheme,
                 host = host,
                 port = port,
                 authEnabled = authEnabled,
-                username = if (authEnabled) username else null,
+                username = if (authEnabled || protocol == ProxyProtocol.SSH) username else null,
                 password = if (authEnabled) password else null,
+                ssCipher = ssCipher,
+                sshUseKey = sshUseKey,
+                sshPrivateKeyPem = sshPrivateKeyPem,
+                sshPassphrase = sshPassphrase,
+                relayNoDelay = relayNoDelay,
                 createdAt = config?.createdAt ?: System.currentTimeMillis()
             )
 
@@ -483,9 +701,15 @@ class MainActivity : AppCompatActivity(),
                 Snackbar.make(containerView, R.string.config_saved, Snackbar.LENGTH_SHORT).show()
             }
 
-            // Set the proxy address in the main input
-            hostEditText.setText(newConfig.proxyAddress)
+            // Set the proxy address in the main input. SSH-with-key configs
+            // can't be fully expressed as a flat string here -- the key file
+            // is (re-)materialized right before connecting, in the "Start"
+            // button handler, via ProxyUrlBuilder + loadedConfigId.
+            hostEditText.setText(
+                if (newConfig.requiresKeyFile) newConfig.displayAddress else newConfig.proxyAddress
+            )
             this.hostLayout.error = null
+            loadedConfigId = newConfig.id
 
             hideKeyboard()
             sheet.dismiss()
@@ -519,8 +743,9 @@ class MainActivity : AppCompatActivity(),
 
         val adapter = SavedConfigsAdapter(
             onUseClick = { config ->
-                hostEditText.setText(config.proxyAddress)
+                hostEditText.setText(if (config.requiresKeyFile) config.displayAddress else config.proxyAddress)
                 hostLayout.error = null
+                loadedConfigId = config.id
                 bottomSheet.dismiss()
                 Snackbar.make(containerView, getString(R.string.config_loaded, config.name), Snackbar.LENGTH_SHORT).show()
             },
@@ -576,6 +801,13 @@ class MainActivity : AppCompatActivity(),
     }
 
     private val proxyRegex = """(?:(socks5h?|http)://)?(?:(\w+):(\w+)@)?([\w.\-]+):(\d+)""".toRegex()
+    private val schemeRegex = """^([a-zA-Z][a-zA-Z0-9+.\-]*)://""".toRegex()
+    private val KNOWN_PROXY_SCHEMES = setOf("http", "socks4", "socks5", "socks5h", "ss", "ssh", "relay")
+
+    private fun detectProtocolFromUrl(url: String): String {
+        val scheme = schemeRegex.find(url)?.groupValues?.get(1)?.lowercase()
+        return if (scheme != null && scheme in KNOWN_PROXY_SCHEMES) scheme else "http"
+    }
 
     private fun parseProxyData(): ProxyData? {
         val input = hostEditText.text?.trim()?.toString() ?: return null
@@ -597,6 +829,17 @@ class MainActivity : AppCompatActivity(),
         if (input.isNullOrEmpty()) {
             hostLayout.error = getString(R.string.error_empty_input)
             return null
+        }
+
+        // If the input already names one of tun2socks's protocols
+        // explicitly, trust it verbatim rather than trying to decompose it:
+        // some (ss://method:password@..., ssh://...?privateKeyFile=...)
+        // don't fit the simple [user:pass@]host:port shape the fallback
+        // parse below assumes.
+        val schemeMatch = schemeRegex.find(input)
+        if (schemeMatch != null && schemeMatch.groupValues[1].lowercase() in KNOWN_PROXY_SCHEMES) {
+            hostLayout.error = null
+            return input
         }
 
         val matchResult = proxyRegex.find(input)
@@ -925,8 +1168,10 @@ class MainActivity : AppCompatActivity(),
                 sheet.dismiss()
                 Snackbar.make(containerView, getString(R.string.rotation_started, configCount), Snackbar.LENGTH_SHORT).show()
                 if (firstConfig != null) {
-                    hostEditText.setText(firstConfig.proxyAddress)
-                    startVpn(firstConfig.proxyAddress)
+                    hostEditText.setText(
+                        if (firstConfig.requiresKeyFile) firstConfig.displayAddress else firstConfig.proxyAddress
+                    )
+                    startVpn(ProxyUrlBuilder.build(this, firstConfig))
                 }
             } else {
                 rotationManager.disable()
@@ -1066,6 +1311,24 @@ class MainActivity : AppCompatActivity(),
                 startService(intentVPNService)
             } else {
                 applyVpnStateToUI(VpnState.DISCONNECTED)
+            }
+        } else if (requestCode == REQUEST_IMPORT_SSH_KEY) {
+            val callback = pendingKeyImportCallback
+            pendingKeyImportCallback = null
+            val uri = data?.data
+            if (resultCode == Activity.RESULT_OK && uri != null && callback != null) {
+                try {
+                    val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    if (content.isNullOrBlank()) {
+                        Snackbar.make(containerView, R.string.key_file_import_failed, Snackbar.LENGTH_SHORT).show()
+                    } else {
+                        callback(content)
+                        Snackbar.make(containerView, R.string.key_file_imported, Snackbar.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "SSH key import failed: ${e.message}")
+                    Snackbar.make(containerView, R.string.key_file_import_failed, Snackbar.LENGTH_SHORT).show()
+                }
             }
         }
     }

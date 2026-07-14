@@ -23,6 +23,8 @@ import tun.proxy.BuildConfig
 import tun.proxy.MainActivity
 import tun.proxy.MyApplication
 import tun.proxy.R
+import tun.proxy.util.ProxyHealthCheck
+import tun.proxy.util.ProxyUrlBuilder
 import tun.proxy.widget.VpnWidgetProvider
 import tun.utils.Utils
 import java.util.concurrent.CountDownLatch
@@ -45,6 +47,8 @@ class Tun2SocksVpnService : VpnService() {
 
     companion object {
         const val ACTION_STOP_SERVICE = "${BuildConfig.APPLICATION_ID}.STOP_VPN_SERVICE"
+        /** Re-runs just the proxy reachability probe, without restarting the tunnel. */
+        const val ACTION_RECHECK_PROXY = "${BuildConfig.APPLICATION_ID}.RECHECK_PROXY"
         private const val PREF_LAST_PROXY = "last_proxy_data"
         private const val PREF_FAILOVER_PROXY = "failover_proxy_data"
         private const val PREFS_NAME = "vpn_service_prefs"
@@ -60,11 +64,30 @@ class Tun2SocksVpnService : VpnService() {
         var isActive: Boolean = false
             private set
 
+        /**
+         * Masks any credentials embedded in a proxy URL for display/logging,
+         * regardless of protocol: user:pass@ (http/socks5/relay/ssh),
+         * method:password@ (ss), or a lone userid@ (socks4). Also strips the
+         * query string, since SSH URLs carry a private-key file path and
+         * passphrase there.
+         */
         fun maskProxyUrl(url: String): String {
-            val regex = """((?:socks5h?|http)://)(\w+):(\w+)@(.+)""".toRegex()
-            return regex.replace(url) { match ->
-                "${match.groupValues[1]}***@${match.groupValues[4]}"
+            val withoutQuery = url.substringBefore("?")
+            return withoutQuery.replace("""^([a-zA-Z][a-zA-Z0-9+.\-]*://)([^@/]+)@""".toRegex()) { match ->
+                "${match.groupValues[1]}***@"
             }
+        }
+
+        /** Extracts host:port from a tun2socks proxy URL, regardless of protocol. */
+        fun extractHostPort(url: String): Pair<String, Int>? {
+            val withoutQuery = url.substringBefore("?")
+            val afterScheme = withoutQuery.substringAfter("://", withoutQuery)
+            val hostPort = afterScheme.substringAfterLast("@")
+            val idx = hostPort.lastIndexOf(":")
+            if (idx <= 0) return null
+            val host = hostPort.substring(0, idx)
+            val port = hostPort.substring(idx + 1).toIntOrNull() ?: return null
+            return host to port
         }
     }
 
@@ -133,6 +156,12 @@ class Tun2SocksVpnService : VpnService() {
                 stopForeground(true)
             }
             stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_RECHECK_PROXY) {
+            Log.d(TAG, "onStartCommand: recheck proxy")
+            recheckProxyAsync()
             return START_NOT_STICKY
         }
 
@@ -315,7 +344,13 @@ class Tun2SocksVpnService : VpnService() {
             Engine.start()
             Log.d(TAG, "startVpn engine started")
             utils?.setProxyName(serviceName)
-            broadcastState(VpnState.CONNECTED)
+            // The netstack coming up doesn't mean the configured proxy is
+            // actually reachable -- Engine.start() succeeds even for a
+            // completely dead SOCKS5/HTTP/SSH address, since tun2socks only
+            // dials out lazily per-connection. Probe it directly so
+            // "Connected" reflects reality instead of just "netstack is up".
+            val reachable = probeProxyReachable(proxyDetails)
+            broadcastState(if (reachable) VpnState.CONNECTED else VpnState.CONNECTED_UNVERIFIED)
             // Block until stop signal — no timeout, runs indefinitely
             Log.d(TAG, "startVpn is waiting for stop signal")
             stopSignal.await()
@@ -345,6 +380,9 @@ class Tun2SocksVpnService : VpnService() {
             } catch (e: Exception) {
                 Log.w(TAG, "Engine.stop() error: ${e.message}")
             }
+            // Engine.start() already read it (synchronously, before the
+            // netstack comes up) if it was going to -- safe to remove now.
+            ProxyUrlBuilder.clearKeyFile(this)
             // vpnInterface was detached (fd ownership transferred to engine),
             // so no close() needed here
             utils?.setVpnStatus(false)
@@ -375,8 +413,26 @@ class Tun2SocksVpnService : VpnService() {
         return vpnThread?.isAlive == true
     }
 
+    /** Direct-dial reachability check against the configured proxy's host:port. */
+    private fun probeProxyReachable(proxyUrl: String): Boolean {
+        val (host, port) = extractHostPort(proxyUrl) ?: return true // unparseable -- don't block startup on it
+        val result = ProxyHealthCheck.test(host, port)
+        Log.d(TAG, "probeProxyReachable $host:$port -> reachable=${result.reachable}")
+        return result.reachable
+    }
+
+    /** Re-runs the reachability probe against the currently active proxy, without restarting the tunnel. */
+    private fun recheckProxyAsync() {
+        val data = proxyData
+        if (!isRunning() || data == null) return
+        Thread({
+            val reachable = probeProxyReachable(data)
+            broadcastState(if (reachable) VpnState.CONNECTED else VpnState.CONNECTED_UNVERIFIED)
+        }, "ProxyRecheck").start()
+    }
+
     private fun broadcastState(state: VpnState, errorMsg: String? = null) {
-        isActive = (state == VpnState.CONNECTED || state == VpnState.CONNECTING)
+        isActive = (state == VpnState.CONNECTED || state == VpnState.CONNECTED_UNVERIFIED || state == VpnState.CONNECTING)
         Log.d(TAG, "broadcastState isActive ${isActive}")
         val intent = Intent(ACTION_VPN_STATE_CHANGED).apply {
             setPackage(packageName)

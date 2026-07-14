@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import tun.proxy.util.ProxyUrlBuilder
 
 class RotationReceiver : BroadcastReceiver() {
     private val TAG = "RotationReceiver"
@@ -26,7 +27,7 @@ class RotationReceiver : BroadcastReceiver() {
 
         // Start VPN with the next config
         val vpnIntent = Intent(context, Tun2SocksVpnService::class.java).apply {
-            putExtra("data", nextConfig.proxyAddress)
+            putExtra("data", ProxyUrlBuilder.build(context, nextConfig))
         }
         context.startService(vpnIntent)
 

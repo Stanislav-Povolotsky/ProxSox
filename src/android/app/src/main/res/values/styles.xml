@@ -75,6 +75,22 @@
         <item name="boxCornerRadiusBottomEnd">8dp</item>
     </style>
 
+    <!-- Outlined dropdown (ExposedDropdownMenu) input style, same look as
+         Widget.ProxSox.TextInputLayout but with the dropdown parent it
+         needs to actually show a menu on tap. -->
+    <style name="Widget.ProxSox.TextInputLayout.Dropdown" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+        <item name="boxStrokeColor">@color/colorSecondary</item>
+        <item name="boxStrokeWidth">1dp</item>
+        <item name="boxStrokeWidthFocused">2dp</item>
+        <item name="hintTextColor">@color/colorSecondary</item>
+        <item name="android:textColorHint">@color/colorOnBackground</item>
+        <item name="boxBackgroundColor">@color/colorInputBackground</item>
+        <item name="boxCornerRadiusTopStart">8dp</item>
+        <item name="boxCornerRadiusTopEnd">8dp</item>
+        <item name="boxCornerRadiusBottomStart">8dp</item>
+        <item name="boxCornerRadiusBottomEnd">8dp</item>
+    </style>
+
     <!-- Dialog theme -->
     <style name="Widget.ProxSox.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
         <item name="colorSurface">@color/colorSurface</item>

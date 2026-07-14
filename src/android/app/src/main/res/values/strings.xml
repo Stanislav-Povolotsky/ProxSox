@@ -15,8 +15,13 @@
     <string name="status_connected">Connected</string>
     <string name="status_disconnected">Disconnected</string>
     <string name="status_connecting">Connecting\u2026</string>
+    <string name="status_verifying">Verifying proxy\u2026</string>
+    <string name="status_connected_unverified">Connected \u2014 proxy not responding</string>
+    <string name="status_proxy_unreachable_detail">Tunnel is up, but the proxy server isn\'t answering</string>
     <string name="btn_connect">Connect</string>
     <string name="btn_disconnect">Disconnect</string>
+    <string name="btn_recheck">Check again</string>
+    <string name="notify_proxy_unreachable">Proxy not responding</string>
 
     <!-- Saved Configs -->
     <string name="btn_save_config">Save</string>
@@ -146,8 +151,31 @@
 
     <!-- Badges -->
     <string name="badge_http">HTTP</string>
+    <string name="badge_socks4">SOCKS4</string>
     <string name="badge_socks5">SOCKS5</string>
     <string name="badge_socks5h">SOCKS5H</string>
+    <string name="badge_ss">Shadowsocks</string>
+    <string name="badge_ssh">SSH</string>
+    <string name="badge_relay">Relay</string>
+
+    <!-- Add/Edit Config Form: protocol-specific fields -->
+    <string name="protocol_hint">Select protocol</string>
+    <string name="socks4_user_id_label">User ID (optional)</string>
+    <string name="ss_cipher_label">Cipher</string>
+    <string name="ss_password_label">Password</string>
+    <string name="ssh_use_key_label">Use private key</string>
+    <string name="ssh_private_key_label">Private Key (PEM)</string>
+    <string name="ssh_private_key_hint">Paste an OpenSSH or PEM private key, or import a file</string>
+    <string name="ssh_passphrase_label">Key Passphrase (optional)</string>
+    <string name="btn_import_key_file">Import from file</string>
+    <string name="key_file_imported">Private key loaded from file</string>
+    <string name="key_file_import_failed">Could not read that file</string>
+    <string name="relay_nodelay_label">Disable Nagle\'s algorithm (nodelay)</string>
+    <string name="error_cipher_required">Select a cipher</string>
+    <string name="error_ss_password_required">Password is required</string>
+    <string name="error_ssh_username_required">Username is required</string>
+    <string name="error_ssh_auth_required">Provide a password, a private key, or both</string>
+    <string name="error_ssh_key_invalid">This doesn\'t look like a valid private key</string>
 
     <!-- Remote DNS -->
     <string name="remote_dns_label">Remote DNS (resolve on proxy server)</string>

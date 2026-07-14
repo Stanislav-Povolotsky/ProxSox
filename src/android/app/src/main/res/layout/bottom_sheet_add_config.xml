@@ -40,51 +40,24 @@
             android:paddingStart="20dp"
             android:paddingEnd="20dp">
 
-            <!-- Protocol Toggle -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:letterSpacing="0.1"
-                android:text="@string/protocol_label"
-                android:textAllCaps="true"
-                android:textColor="@color/colorOnBackground"
-                android:textSize="12sp" />
-
-            <com.google.android.material.button.MaterialButtonToggleGroup
-                android:id="@+id/protocol_toggle"
+            <!-- Protocol -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/protocol_layout"
+                style="@style/Widget.ProxSox.TextInputLayout.Dropdown"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                app:checkedButton="@id/btn_http"
-                app:selectionRequired="true"
-                app:singleSelection="true">
+                android:hint="@string/protocol_label">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_http"
-                    style="@style/Widget.ProxSox.ToggleButton"
-                    android:layout_width="0dp"
+                <AutoCompleteTextView
+                    android:id="@+id/protocol_dropdown"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/badge_http" />
+                    android:inputType="none"
+                    android:textColor="@color/colorOnSurface"
+                    android:textSize="15sp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_socks5"
-                    style="@style/Widget.ProxSox.ToggleButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/badge_socks5" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_socks5h"
-                    style="@style/Widget.ProxSox.ToggleButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/badge_socks5h" />
-
-            </com.google.android.material.button.MaterialButtonToggleGroup>
+            </com.google.android.material.textfield.TextInputLayout>
 
             <!-- Host -->
             <com.google.android.material.textfield.TextInputLayout
@@ -130,37 +103,96 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- Auth Toggle -->
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/auth_switch"
+            <!-- Group: generic username/password auth (http, socks5, socks5h, relay) -->
+            <LinearLayout
+                android:id="@+id/group_auth"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="@string/auth_toggle_label"
-                android:textColor="@color/colorOnSurface"
-                android:textSize="14sp"
-                app:thumbTint="@color/colorSecondary"
-                app:trackTintMode="src_atop" />
+                android:orientation="vertical">
 
-            <!-- Auth Fields (hidden by default) -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/auth_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/auth_toggle_label"
+                    android:textColor="@color/colorOnSurface"
+                    android:textSize="14sp"
+                    app:thumbTint="@color/colorSecondary"
+                    app:trackTintMode="src_atop" />
+
+                <LinearLayout
+                    android:id="@+id/auth_fields"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/input_username_layout"
+                        style="@style/Widget.ProxSox.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:hint="@string/username_label"
+                        app:errorEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/input_username"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:textColor="@color/colorOnSurface"
+                            android:textSize="15sp" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/input_password_layout"
+                        style="@style/Widget.ProxSox.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:hint="@string/password_label"
+                        app:endIconMode="password_toggle"
+                        app:errorEnabled="true">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/input_password"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textPassword"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:textColor="@color/colorOnSurface"
+                            android:textSize="15sp" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Group: SOCKS4 user ID (no password in this protocol) -->
             <LinearLayout
-                android:id="@+id/auth_fields"
+                android:id="@+id/group_socks4"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
 
                 <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/input_username_layout"
+                    android:id="@+id/input_socks4_userid_layout"
                     style="@style/Widget.ProxSox.TextInputLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="12dp"
-                    android:hint="@string/username_label"
-                    app:errorEnabled="true">
+                    android:layout_marginBottom="16dp"
+                    android:hint="@string/socks4_user_id_label">
 
                     <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/input_username"
+                        android:id="@+id/input_socks4_userid"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="text"
@@ -171,18 +203,47 @@
 
                 </com.google.android.material.textfield.TextInputLayout>
 
+            </LinearLayout>
+
+            <!-- Group: Shadowsocks cipher + password -->
+            <LinearLayout
+                android:id="@+id/group_ss"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
                 <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/input_password_layout"
-                    style="@style/Widget.ProxSox.TextInputLayout"
+                    android:id="@+id/ss_cipher_layout"
+                    style="@style/Widget.ProxSox.TextInputLayout.Dropdown"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="12dp"
-                    android:hint="@string/password_label"
+                    android:hint="@string/ss_cipher_label"
+                    app:errorEnabled="true">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/ss_cipher_dropdown"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="none"
+                        android:textColor="@color/colorOnSurface"
+                        android:textSize="15sp" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/input_ss_password_layout"
+                    style="@style/Widget.ProxSox.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:hint="@string/ss_password_label"
                     app:endIconMode="password_toggle"
                     app:errorEnabled="true">
 
                     <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/input_password"
+                        android:id="@+id/input_ss_password"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="textPassword"
@@ -195,12 +256,160 @@
 
             </LinearLayout>
 
+            <!-- Group: SSH -->
+            <LinearLayout
+                android:id="@+id/group_ssh"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/input_ssh_username_layout"
+                    style="@style/Widget.ProxSox.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:hint="@string/username_label"
+                    app:errorEnabled="true">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/input_ssh_username"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:textColor="@color/colorOnSurface"
+                        android:textSize="15sp" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/input_ssh_password_layout"
+                    style="@style/Widget.ProxSox.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:hint="@string/password_label"
+                    app:endIconMode="password_toggle"
+                    app:errorEnabled="true">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/input_ssh_password"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textPassword"
+                        android:maxLines="1"
+                        android:singleLine="true"
+                        android:textColor="@color/colorOnSurface"
+                        android:textSize="15sp" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/ssh_use_key_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/ssh_use_key_label"
+                    android:textColor="@color/colorOnSurface"
+                    android:textSize="14sp"
+                    app:thumbTint="@color/colorSecondary"
+                    app:trackTintMode="src_atop" />
+
+                <LinearLayout
+                    android:id="@+id/ssh_key_fields"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/input_ssh_key_layout"
+                        style="@style/Widget.ProxSox.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:hint="@string/ssh_private_key_label"
+                        app:errorEnabled="true"
+                        app:helperText="@string/ssh_private_key_hint">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/input_ssh_key"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:gravity="top|start"
+                            android:inputType="textMultiLine"
+                            android:minLines="3"
+                            android:maxLines="8"
+                            android:textColor="@color/colorOnSurface"
+                            android:textSize="12sp" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_import_key_file"
+                        style="@style/Widget.ProxSox.Button.Text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:text="@string/btn_import_key_file" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/input_ssh_passphrase_layout"
+                        style="@style/Widget.ProxSox.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:hint="@string/ssh_passphrase_label"
+                        app:endIconMode="password_toggle">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/input_ssh_passphrase"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textPassword"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:textColor="@color/colorOnSurface"
+                            android:textSize="15sp" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Group: Relay advanced -->
+            <LinearLayout
+                android:id="@+id/group_relay_advanced"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/relay_nodelay_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/relay_nodelay_label"
+                    android:textColor="@color/colorOnSurface"
+                    android:textSize="14sp"
+                    app:thumbTint="@color/colorSecondary"
+                    app:trackTintMode="src_atop" />
+
+            </LinearLayout>
+
             <!-- Config Name -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/input_name_layout"
                 style="@style/Widget.ProxSox.TextInputLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:layout_marginBottom="20dp"
                 android:hint="@string/config_name_label"
                 app:errorEnabled="true">

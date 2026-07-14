@@ -65,6 +65,24 @@
                     android:textSize="12sp"
                     tools:text="socks5://***@1.2.3.4:1080" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_recheck_proxy"
+                    style="@style/Widget.ProxSox.Button.Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingStart="8dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="4dp"
+                    android:text="@string/btn_recheck"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
