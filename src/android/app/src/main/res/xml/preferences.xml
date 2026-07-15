@@ -37,6 +37,12 @@
         android:key="remote_dns_setting"
         android:title="@string/remote_dns_label">
 
+        <SwitchPreferenceCompat
+            android:key="remote_dns_enabled"
+            android:title="@string/pref_remote_dns_default"
+            android:summary="@string/pref_remote_dns_default_summary"
+            android:defaultValue="true" />
+
         <EditTextPreference
             android:key="fake_ip_subnet"
             android:title="@string/pref_fake_ip_subnet"

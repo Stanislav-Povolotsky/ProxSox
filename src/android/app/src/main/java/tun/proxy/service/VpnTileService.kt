@@ -26,7 +26,7 @@ class VpnTileService : TileService() {
             }
             startService(stopIntent)
         } else {
-            // Open the app — VPN requires user interaction for VpnService.prepare()
+            // Open the app - VPN requires user interaction for VpnService.prepare()
             val openIntent = Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

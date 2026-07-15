@@ -48,7 +48,7 @@ class ConnectionLogAdapter(
             }
             (dot.background as? GradientDrawable)?.setColor(ContextCompat.getColor(ctx, colorRes))
 
-            val label = "${event.action} — ${event.protocol.uppercase()}"
+            val label = "${event.action} - ${event.protocol.uppercase()}"
             action.text = label
 
             if (!event.error.isNullOrEmpty()) {

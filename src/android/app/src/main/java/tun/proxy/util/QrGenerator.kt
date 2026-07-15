@@ -8,6 +8,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import tun.proxy.model.ProxyConfig
+import tun.proxy.model.normalized
 
 object QrGenerator {
 
@@ -22,7 +23,7 @@ object QrGenerator {
             val data = uri.substringAfter("data=", "")
             if (data.isEmpty()) return null
             val json = String(Base64.decode(data, Base64.URL_SAFE or Base64.NO_WRAP))
-            Gson().fromJson(json, ProxyConfig::class.java)
+            Gson().fromJson(json, ProxyConfig::class.java)?.normalized()
         } catch (e: Exception) {
             null
         }

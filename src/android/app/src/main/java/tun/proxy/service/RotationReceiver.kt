@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.preference.PreferenceManager
 import tun.proxy.util.ProxyUrlBuilder
 
 class RotationReceiver : BroadcastReceiver() {
@@ -25,9 +26,13 @@ class RotationReceiver : BroadcastReceiver() {
 
         Log.d(TAG, "Rotating to: ${nextConfig.name}")
 
-        // Start VPN with the next config
+        // Start VPN with the next config, carrying its effective Remote DNS
+        // (per-config override -> global default).
+        val globalDefault = PreferenceManager.getDefaultSharedPreferences(context)
+            .getBoolean(Tun2SocksVpnService.PREF_REMOTE_DNS_ENABLED, true)
         val vpnIntent = Intent(context, Tun2SocksVpnService::class.java).apply {
             putExtra("data", ProxyUrlBuilder.build(context, nextConfig))
+            putExtra(Tun2SocksVpnService.EXTRA_REMOTE_DNS, nextConfig.effectiveRemoteDns(globalDefault))
         }
         context.startService(vpnIntent)
 

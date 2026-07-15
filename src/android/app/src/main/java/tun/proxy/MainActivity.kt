@@ -13,9 +13,6 @@ import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
-import android.text.TextUtils
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.Menu
@@ -32,6 +29,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import com.google.android.material.snackbar.Snackbar
@@ -45,14 +43,17 @@ import android.widget.ImageView
 import tun.proxy.adapter.ConnectionLogAdapter
 import tun.proxy.adapter.SavedConfigsAdapter
 import tun.proxy.model.ProxyConfig
-import tun.proxy.model.ProxyData
 import tun.proxy.model.ProxyProtocol
 import tun.proxy.model.SHADOWSOCKS_CIPHERS
+import tun.proxy.model.normalized
+import tun.proxy.model.protocolSupportsRemoteDns
 import tun.proxy.model.ConnectionEvent
 import tun.proxy.repository.ConfigRepository
 import tun.proxy.repository.ConnectionLogRepository
 import android.widget.ArrayAdapter
 import android.widget.Spinner
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import tun.proxy.adapter.RotationConfigAdapter
 import tun.proxy.service.ProxyRotationManager
 import tun.proxy.util.ClipboardProxyDetector
@@ -74,17 +75,23 @@ class MainActivity : AppCompatActivity(),
 
     private lateinit var startButton: MaterialButton
     private lateinit var stopButton: MaterialButton
-    private lateinit var hostEditText: TextInputEditText
-    private lateinit var hostLayout: TextInputLayout
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
-    private lateinit var statusProxy: TextView
     private lateinit var statusProgress: CircularProgressIndicator
     private lateinit var btnRecheckProxy: MaterialButton
-    private lateinit var btnSave: MaterialButton
+    private lateinit var btnNew: MaterialButton
     private lateinit var btnLoad: MaterialButton
     private lateinit var containerView: View
-    private lateinit var remoteDnsSwitch: SwitchMaterial
+
+    // Active-proxy tile
+    private lateinit var activeCard: View
+    private lateinit var activeFilled: View
+    private lateinit var activeEmpty: View
+    private lateinit var activeName: TextView
+    private lateinit var activeBadge: TextView
+    private lateinit var activeAddress: TextView
+    private lateinit var activeMeta: TextView
+    private lateinit var btnActiveMore: View
 
     private lateinit var utils: Utils
     private lateinit var configRepository: ConfigRepository
@@ -95,16 +102,17 @@ class MainActivity : AppCompatActivity(),
     private val REQUEST_NOTIFICATION_PERMISSION = 1231
     private val REQUEST_IMPORT_SSH_KEY = 1300
     private var intentVPNService: Intent? = null
-    private val PREF_USER_CONFIG = "pref_user_config"
     private val PREF_FORMATTED_CONFIG = "pref_formatted_config"
+    private val PREF_ACTIVE_CONFIG = "pref_active_config_json"
     private val PREF_REMOTE_DNS = tun.proxy.service.Tun2SocksVpnService.PREF_REMOTE_DNS_ENABLED
 
     private var currentVpnState = VpnState.DISCONNECTED
     private var pendingProxy: String? = null
-    // Saved-config backing hostEditText's current value, if any -- used so
-    // SSH-with-key configs (which can't be fully expressed as one string)
-    // get their key file re-materialized right before connecting.
-    private var loadedConfigId: String? = null
+    // The proxy shown in the active tile and used when Connect is tapped.
+    // Either a saved ProxyConfig or an ephemeral one (id == "") from
+    // clipboard/import. Persisted as JSON so it survives restarts.
+    private var activeConfig: ProxyConfig? = null
+    private val gson by lazy { com.google.gson.Gson() }
     private var pendingKeyImportCallback: ((String) -> Unit)? = null
     private lateinit var clipboardDetector: ClipboardProxyDetector
     private lateinit var rotationManager: ProxyRotationManager
@@ -132,11 +140,8 @@ class MainActivity : AppCompatActivity(),
         containerView = findViewById(R.id.container)
         startButton = findViewById(R.id.start)
         stopButton = findViewById(R.id.stop)
-        hostEditText = findViewById(R.id.host)
-        hostLayout = findViewById(R.id.host_layout)
         statusDot = findViewById(R.id.status_dot)
         statusText = findViewById(R.id.status_text)
-        statusProxy = findViewById(R.id.status_proxy)
         statusProgress = findViewById(R.id.status_progress)
         btnRecheckProxy = findViewById(R.id.btn_recheck_proxy)
         btnRecheckProxy.setOnClickListener {
@@ -144,9 +149,17 @@ class MainActivity : AppCompatActivity(),
                 action = Tun2SocksVpnService.ACTION_RECHECK_PROXY
             })
         }
-        btnSave = findViewById(R.id.btn_save)
+        btnNew = findViewById(R.id.btn_new)
         btnLoad = findViewById(R.id.btn_load)
-        remoteDnsSwitch = findViewById(R.id.switch_remote_dns)
+
+        activeCard = findViewById(R.id.active_proxy_card)
+        activeFilled = findViewById(R.id.active_filled)
+        activeEmpty = findViewById(R.id.active_empty)
+        activeName = findViewById(R.id.active_name)
+        activeBadge = findViewById(R.id.active_badge)
+        activeAddress = findViewById(R.id.active_address)
+        activeMeta = findViewById(R.id.active_meta)
+        btnActiveMore = findViewById(R.id.btn_active_more)
 
         configRepository = ConfigRepository(this)
         logRepository = ConnectionLogRepository(this)
@@ -155,54 +168,32 @@ class MainActivity : AppCompatActivity(),
         utils = Utils(this)
         intentVPNService = Intent(this, Tun2SocksVpnService::class.java)
 
-        // Restore the Remote DNS setting from SharedPreferences
-        val defaultPrefs = PreferenceManager.getDefaultSharedPreferences(this)
-        remoteDnsSwitch.isChecked = defaultPrefs.getBoolean(PREF_REMOTE_DNS, false)
-
-        // Auto-toggle Remote DNS based on the protocol in the proxy input
-        hostEditText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                val text = s?.toString()?.trim() ?: return
-                if (text.startsWith("socks5h://")) {
-                    remoteDnsSwitch.isChecked = true
-                } else if (text.startsWith("socks5://") || text.startsWith("http://")) {
-                    remoteDnsSwitch.isChecked = false
-                }
-                // plain host:port or unrecognised prefix → don't change the switch
-            }
-        })
-
         handleDeepLink(intent)
 
-        startButton.setOnClickListener {
-            // SSH-with-key configs can't be represented as a plain string in
-            // hostEditText (see showAddEditConfigSheet) -- if one is loaded,
-            // rebuild its connection string fresh (re-materializing the key
-            // file) instead of parsing the display text.
-            val loadedConfig = loadedConfigId?.let { configRepository.getById(it) }
-            if (loadedConfig != null && loadedConfig.requiresKeyFile) {
-                startVpn(ProxyUrlBuilder.build(this, loadedConfig))
-            } else {
-                val proxy = parseProxy()
-                if (proxy != null) {
-                    startVpn(proxy)
-                }
-            }
-        }
+        startButton.setOnClickListener { connectActive() }
         stopButton.setOnClickListener { confirmDisconnect() }
-        btnSave.setOnClickListener { showAddEditConfigSheet() }
+        btnNew.setOnClickListener { showAddEditConfigSheet() }
         btnLoad.setOnClickListener { showSavedConfigsBottomSheet() }
 
+        // Active tile: tap = edit, long-press = menu, overflow = menu.
+        activeCard.setOnClickListener {
+            activeConfig?.let { showAddEditConfigSheet(config = it) } ?: showAddEditConfigSheet()
+        }
+        activeCard.setOnLongClickListener {
+            activeConfig?.let { showActiveProxyMenu(activeCard) }
+            activeConfig != null
+        }
+        btnActiveMore.setOnClickListener {
+            activeConfig?.let { showActiveProxyMenu(btnActiveMore) }
+        }
+
+        loadActiveConfig()
+
         if (savedInstanceState != null) {
-            val savedHost = savedInstanceState.getString("host_text", "")
-            hostEditText.setText(savedHost)
             val savedState = savedInstanceState.getString("vpn_state", VpnState.DISCONNECTED.name)
             currentVpnState = try { VpnState.valueOf(savedState) } catch (e: Exception) { VpnState.DISCONNECTED }
             applyVpnStateToUI(currentVpnState)
         } else {
-            loadHostPort()
             applyVpnStateToUI(VpnState.DISCONNECTED)
             showOnboardingIfFirstRun()
         }
@@ -210,7 +201,6 @@ class MainActivity : AppCompatActivity(),
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putString("host_text", hostEditText.text?.toString() ?: "")
         outState.putString("vpn_state", currentVpnState.name)
     }
 
@@ -276,17 +266,14 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    private fun currentProxyLabel(): String {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val rawConfig = prefs.getString(PREF_FORMATTED_CONFIG, "") ?: ""
-        if (rawConfig.isEmpty()) return ""
-        // Show rotation status if active, otherwise just the protocol type (not the address)
-        val rotState = rotationManager.getState()
-        return if (rotState.enabled && rotState.configIds.size > 1) {
-            getString(R.string.rotation_status_active, rotState.currentIndex + 1, rotState.configIds.size)
-        } else {
-            "${protocolDisplayName(ProxyProtocol.fromScheme(detectProtocolFromUrl(rawConfig)))} Proxy"
-        }
+    /** Enables/disables changing the active proxy while the tunnel is up. */
+    private fun setConfigControlsEnabled(enabled: Boolean) {
+        btnNew.isEnabled = enabled
+        btnLoad.isEnabled = enabled
+        activeCard.isClickable = enabled
+        activeCard.isLongClickable = enabled
+        btnActiveMore.isEnabled = enabled
+        activeCard.alpha = if (enabled) 1f else 0.6f
     }
 
     private fun applyVpnStateToUI(state: VpnState) {
@@ -294,12 +281,10 @@ class MainActivity : AppCompatActivity(),
         val dotDrawable = statusDot.background
         btnRecheckProxy.visibility = if (state == VpnState.CONNECTED_UNVERIFIED) View.VISIBLE else View.GONE
         when (state) {
-            VpnState.DISCONNECTED -> {
+            VpnState.DISCONNECTED, VpnState.FAILED -> {
                 startButton.visibility = View.VISIBLE
                 stopButton.visibility = View.GONE
-                hostEditText.isEnabled = true
-                btnSave.isEnabled = true
-                remoteDnsSwitch.isEnabled = true
+                setConfigControlsEnabled(true)
                 statusDot.visibility = View.VISIBLE
                 statusProgress.visibility = View.GONE
                 if (dotDrawable is GradientDrawable) {
@@ -307,26 +292,20 @@ class MainActivity : AppCompatActivity(),
                 }
                 statusText.text = getString(R.string.status_disconnected)
                 statusText.setTextColor(ContextCompat.getColor(this, R.color.colorOnSurface))
-                statusProxy.visibility = View.GONE
             }
             VpnState.CONNECTING -> {
                 startButton.visibility = View.GONE
                 stopButton.visibility = View.GONE
-                hostEditText.isEnabled = false
-                btnSave.isEnabled = false
-                remoteDnsSwitch.isEnabled = false
+                setConfigControlsEnabled(false)
                 statusDot.visibility = View.GONE
                 statusProgress.visibility = View.VISIBLE
                 statusText.text = getString(R.string.status_connecting)
                 statusText.setTextColor(ContextCompat.getColor(this, R.color.colorWarning))
-                statusProxy.visibility = View.GONE
             }
             VpnState.CONNECTED -> {
                 startButton.visibility = View.GONE
                 stopButton.visibility = View.VISIBLE
-                hostEditText.isEnabled = false
-                btnSave.isEnabled = false
-                remoteDnsSwitch.isEnabled = false
+                setConfigControlsEnabled(false)
                 statusDot.visibility = View.VISIBLE
                 statusProgress.visibility = View.GONE
                 if (dotDrawable is GradientDrawable) {
@@ -334,9 +313,6 @@ class MainActivity : AppCompatActivity(),
                 }
                 statusText.text = getString(R.string.status_connected)
                 statusText.setTextColor(ContextCompat.getColor(this, R.color.colorSuccess))
-                val label = currentProxyLabel()
-                statusProxy.text = label
-                statusProxy.visibility = if (label.isEmpty()) View.GONE else View.VISIBLE
             }
             VpnState.CONNECTED_UNVERIFIED -> {
                 // Tunnel is up (Stop still works), but the proxy didn't answer --
@@ -344,9 +320,7 @@ class MainActivity : AppCompatActivity(),
                 // down either; let the user retry or disconnect manually.
                 startButton.visibility = View.GONE
                 stopButton.visibility = View.VISIBLE
-                hostEditText.isEnabled = false
-                btnSave.isEnabled = false
-                remoteDnsSwitch.isEnabled = false
+                setConfigControlsEnabled(false)
                 statusDot.visibility = View.VISIBLE
                 statusProgress.visibility = View.GONE
                 if (dotDrawable is GradientDrawable) {
@@ -354,26 +328,108 @@ class MainActivity : AppCompatActivity(),
                 }
                 statusText.text = getString(R.string.status_connected_unverified)
                 statusText.setTextColor(ContextCompat.getColor(this, R.color.colorWarning))
-                val label = currentProxyLabel()
-                statusProxy.text = label
-                statusProxy.visibility = if (label.isEmpty()) View.GONE else View.VISIBLE
-            }
-            VpnState.FAILED -> {
-                startButton.visibility = View.VISIBLE
-                stopButton.visibility = View.GONE
-                hostEditText.isEnabled = true
-                btnSave.isEnabled = true
-                remoteDnsSwitch.isEnabled = true
-                statusDot.visibility = View.VISIBLE
-                statusProgress.visibility = View.GONE
-                if (dotDrawable is GradientDrawable) {
-                    dotDrawable.setColor(ContextCompat.getColor(this, R.color.colorError))
-                }
-                statusText.text = getString(R.string.status_disconnected)
-                statusText.setTextColor(ContextCompat.getColor(this, R.color.colorOnSurface))
-                statusProxy.visibility = View.GONE
             }
         }
+    }
+
+    // --- Active proxy tile ---
+
+    private fun globalRemoteDnsDefault(): Boolean =
+        PreferenceManager.getDefaultSharedPreferences(this).getBoolean(PREF_REMOTE_DNS, true)
+
+    // The active config JSON can carry secrets (passwords, SSH keys), so it is
+    // stored encrypted, same as ConfigRepository's saved configs.
+    private val activeStore by lazy {
+        val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        EncryptedSharedPreferences.create(
+            "active_config_encrypted",
+            masterKey,
+            this,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    private fun loadActiveConfig() {
+        val json = activeStore.getString(PREF_ACTIVE_CONFIG, null)
+        activeConfig = json?.let {
+            try { gson.fromJson(it, ProxyConfig::class.java)?.normalized() } catch (e: Exception) { null }
+        }
+        renderActiveTile()
+    }
+
+    private fun setActiveConfig(config: ProxyConfig?) {
+        activeConfig = config
+        val editor = activeStore.edit()
+        if (config == null) editor.remove(PREF_ACTIVE_CONFIG)
+        else editor.putString(PREF_ACTIVE_CONFIG, gson.toJson(config))
+        editor.apply()
+        renderActiveTile()
+    }
+
+    private fun renderActiveTile() {
+        val config = activeConfig
+        if (config == null) {
+            activeFilled.visibility = View.GONE
+            activeEmpty.visibility = View.VISIBLE
+            return
+        }
+        activeFilled.visibility = View.VISIBLE
+        activeEmpty.visibility = View.GONE
+        activeName.text = config.name.ifBlank { getString(R.string.active_proxy_custom_name) }
+        // Short badge (SS/RELAY/SOCKS5...), matching the saved-configs list.
+        // The full names (Shadowsocks/Relay) are only used in the editor dropdown.
+        activeBadge.text = config.protocol.uppercase()
+        activeAddress.text = config.displayAddress
+        val dnsOn = config.effectiveRemoteDns(globalRemoteDnsDefault())
+        activeMeta.text = getString(if (dnsOn) R.string.remote_dns_meta_on else R.string.remote_dns_meta_off)
+    }
+
+    private fun showActiveProxyMenu(anchor: View) {
+        val config = activeConfig ?: return
+        val popup = androidx.appcompat.widget.PopupMenu(this, anchor)
+        popup.menuInflater.inflate(R.menu.menu_active_proxy, popup.menu)
+        // Delete label differs for ephemeral (just "remove from screen") vs saved.
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.menu_connect -> { connectActive(); true }
+                R.id.menu_edit -> { showAddEditConfigSheet(config = config); true }
+                R.id.menu_test -> { testProxyConnection(config); true }
+                R.id.menu_share -> { showQrSheet(config); true }
+                R.id.menu_delete -> { deleteActiveConfig(config); true }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    private fun deleteActiveConfig(config: ProxyConfig) {
+        if (!config.isSaved) {
+            // Ephemeral (pasted/imported) -- just clear it from the screen.
+            setActiveConfig(null)
+            Snackbar.make(containerView, R.string.active_cleared, Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        MaterialAlertDialogBuilder(this, R.style.Widget_ProxSox_Dialog)
+            .setTitle(R.string.delete_config_confirm_title)
+            .setMessage(getString(R.string.delete_config_confirm_message, config.name))
+            .setPositiveButton(R.string.menu_delete) { _, _ ->
+                configRepository.delete(config.id)
+                setActiveConfig(null)
+                Snackbar.make(containerView, R.string.config_deleted, Snackbar.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.btn_cancel, null)
+            .show()
+    }
+
+    private fun connectActive() {
+        val config = activeConfig
+        if (config == null) {
+            Snackbar.make(containerView, R.string.active_proxy_none_subtitle, Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        val url = ProxyUrlBuilder.build(this, config)
+        startVpn(url, config.effectiveRemoteDns(globalRemoteDnsDefault()))
     }
 
     private fun confirmDisconnect() {
@@ -391,7 +447,6 @@ class MainActivity : AppCompatActivity(),
         ProxyProtocol.HTTP -> getString(R.string.badge_http)
         ProxyProtocol.SOCKS4 -> getString(R.string.badge_socks4)
         ProxyProtocol.SOCKS5 -> getString(R.string.badge_socks5)
-        ProxyProtocol.SOCKS5H -> getString(R.string.badge_socks5h)
         ProxyProtocol.SHADOWSOCKS -> getString(R.string.badge_ss)
         ProxyProtocol.SSH -> getString(R.string.badge_ssh)
         ProxyProtocol.RELAY -> getString(R.string.badge_relay)
@@ -401,10 +456,10 @@ class MainActivity : AppCompatActivity(),
         text.contains("-----BEGIN") && text.contains("PRIVATE KEY-----")
 
     private val PROTOCOLS_WITH_GENERIC_AUTH = setOf(
-        ProxyProtocol.HTTP, ProxyProtocol.SOCKS5, ProxyProtocol.SOCKS5H, ProxyProtocol.RELAY
+        ProxyProtocol.HTTP, ProxyProtocol.SOCKS5, ProxyProtocol.RELAY
     )
 
-    fun showAddEditConfigSheet(config: ProxyConfig? = null, prefillFromInput: Boolean = false) {
+    fun showAddEditConfigSheet(config: ProxyConfig? = null) {
         savedConfigsSheet?.dismiss()
 
         val sheet = BottomSheetDialog(this)
@@ -448,6 +503,10 @@ class MainActivity : AppCompatActivity(),
         val groupRelayAdvanced = view.findViewById<View>(R.id.group_relay_advanced)
         val relayNoDelaySwitch = view.findViewById<SwitchMaterial>(R.id.relay_nodelay_switch)
 
+        val groupRemoteDns = view.findViewById<View>(R.id.group_remote_dns)
+        val remoteDnsUnsupportedHint = view.findViewById<View>(R.id.remote_dns_unsupported_hint)
+        val remoteDnsToggle = view.findViewById<MaterialButtonToggleGroup>(R.id.remote_dns_toggle)
+
         val nameInput = view.findViewById<TextInputEditText>(R.id.input_name)
         val nameLayout = view.findViewById<TextInputLayout>(R.id.input_name_layout)
         val btnCancel = view.findViewById<MaterialButton>(R.id.btn_cancel)
@@ -472,13 +531,21 @@ class MainActivity : AppCompatActivity(),
             groupSs.visibility = if (protocol == ProxyProtocol.SHADOWSOCKS) View.VISIBLE else View.GONE
             groupSsh.visibility = if (protocol == ProxyProtocol.SSH) View.VISIBLE else View.GONE
             groupRelayAdvanced.visibility = if (protocol == ProxyProtocol.RELAY) View.VISIBLE else View.GONE
+
+            // tun2socks can only hand a hostname to http/socks4/socks5/ss to
+            // resolve themselves (engine/engine.go's remoteDNSProtocols) --
+            // ssh and relay don't support it at all, so don't offer it (and
+            // reset back to Default so a stale override can't linger).
+            val dnsSupported = protocolSupportsRemoteDns(protocol.scheme)
+            groupRemoteDns.visibility = if (dnsSupported) View.VISIBLE else View.GONE
+            remoteDnsUnsupportedHint.visibility = if (dnsSupported) View.GONE else View.VISIBLE
+            if (!dnsSupported) remoteDnsToggle.check(R.id.btn_dns_default)
         }
 
         protocolDropdown.setOnItemClickListener { _, _, _, _ -> applyProtocolVisibility(currentProtocol()) }
 
         val initialProtocol = when {
             config != null -> ProxyProtocol.fromScheme(config.protocol)
-            prefillFromInput -> ProxyProtocol.fromScheme(parseProxyData()?.proxyType ?: "socks5")
             else -> ProxyProtocol.SOCKS5
         }
         protocolDropdown.setText(protocolDisplayName(initialProtocol), false)
@@ -487,11 +554,20 @@ class MainActivity : AppCompatActivity(),
             ssCipherDropdown.setText(SHADOWSOCKS_CIPHERS.first(), false)
         }
 
+        // Remote DNS 3-state: null=Default / true=On / false=Off
+        remoteDnsToggle.check(when (config?.remoteDnsOverride) {
+            true -> R.id.btn_dns_on
+            false -> R.id.btn_dns_off
+            null -> R.id.btn_dns_default
+        })
+
         // Pre-fill from existing config
         if (config != null) {
             hostInput.setText(config.host)
             portInput.setText(config.port.toString())
-            nameInput.setText(config.name)
+            // Blank for an auto-generated name so the user sees the field empty
+            // and only fills it if they want a custom label.
+            nameInput.setText(if (config.name == autoConfigName(initialProtocol, config.host)) "" else config.name)
             when (initialProtocol) {
                 ProxyProtocol.SOCKS4 -> {
                     socks4UserIdInput.setText(config.username ?: "")
@@ -516,19 +592,6 @@ class MainActivity : AppCompatActivity(),
                     if (initialProtocol == ProxyProtocol.RELAY) {
                         relayNoDelaySwitch.isChecked = config.relayNoDelay
                     }
-                }
-            }
-        } else if (prefillFromInput) {
-            // Try to parse the current proxy input and pre-fill (generic-auth protocols only)
-            val parsed = parseProxyData()
-            if (parsed != null) {
-                hostInput.setText(parsed.proxyHost)
-                portInput.setText(parsed.proxyPort.toString())
-                if (!parsed.proxyUser.isNullOrEmpty()) {
-                    authSwitch.isChecked = true
-                    authFields.visibility = View.VISIBLE
-                    usernameInput.setText(parsed.proxyUser)
-                    passwordInput.setText(parsed.proxyPass ?: "")
                 }
             }
         }
@@ -600,10 +663,7 @@ class MainActivity : AppCompatActivity(),
                 portLayout.error = getString(R.string.error_port_invalid)
                 valid = false
             }
-            if (name.isEmpty()) {
-                nameLayout.error = getString(R.string.error_name_required)
-                valid = false
-            }
+            // Name is optional -- auto-generated below if left blank.
 
             var authEnabled = false
             var username: String? = null
@@ -676,9 +736,28 @@ class MainActivity : AppCompatActivity(),
 
             if (!valid || port == null) return@setOnClickListener
 
+            // Defense in depth: even though the toggle is hidden+reset for
+            // protocols that don't support Remote DNS, never persist an
+            // override for them (effectiveRemoteDns() also clamps this).
+            val remoteDnsOverride: Boolean? = if (!protocolSupportsRemoteDns(protocol.scheme)) null else {
+                when (remoteDnsToggle.checkedButtonId) {
+                    R.id.btn_dns_on -> true
+                    R.id.btn_dns_off -> false
+                    else -> null
+                }
+            }
+
+            // Name is optional: fall back to an auto-generated "<PROTOCOL> <host>".
+            val finalName = name.ifBlank { autoConfigName(protocol, host) }
+
+            // Is this an edit of a config already in the repo, or a first save
+            // (brand-new, pasted, or deep-link imported)? Ephemeral/imported
+            // configs carry an id that isn't in the repo yet, so check presence
+            // rather than just id-non-empty.
+            val existingId = config?.id?.takeIf { it.isNotEmpty() && configRepository.getById(it) != null }
             val newConfig = ProxyConfig(
-                id = config?.id ?: UUID.randomUUID().toString(),
-                name = name,
+                id = existingId ?: UUID.randomUUID().toString(),
+                name = finalName,
                 protocol = protocol.scheme,
                 host = host,
                 port = port,
@@ -690,10 +769,11 @@ class MainActivity : AppCompatActivity(),
                 sshPrivateKeyPem = sshPrivateKeyPem,
                 sshPassphrase = sshPassphrase,
                 relayNoDelay = relayNoDelay,
+                remoteDnsOverride = remoteDnsOverride,
                 createdAt = config?.createdAt ?: System.currentTimeMillis()
             )
 
-            if (isEdit) {
+            if (existingId != null) {
                 configRepository.update(newConfig)
                 Snackbar.make(containerView, R.string.config_updated, Snackbar.LENGTH_SHORT).show()
             } else {
@@ -701,15 +781,8 @@ class MainActivity : AppCompatActivity(),
                 Snackbar.make(containerView, R.string.config_saved, Snackbar.LENGTH_SHORT).show()
             }
 
-            // Set the proxy address in the main input. SSH-with-key configs
-            // can't be fully expressed as a flat string here -- the key file
-            // is (re-)materialized right before connecting, in the "Start"
-            // button handler, via ProxyUrlBuilder + loadedConfigId.
-            hostEditText.setText(
-                if (newConfig.requiresKeyFile) newConfig.displayAddress else newConfig.proxyAddress
-            )
-            this.hostLayout.error = null
-            loadedConfigId = newConfig.id
+            // Make the just-saved config the active one shown on the main screen.
+            setActiveConfig(newConfig)
 
             hideKeyboard()
             sheet.dismiss()
@@ -743,11 +816,8 @@ class MainActivity : AppCompatActivity(),
 
         val adapter = SavedConfigsAdapter(
             onUseClick = { config ->
-                hostEditText.setText(if (config.requiresKeyFile) config.displayAddress else config.proxyAddress)
-                hostLayout.error = null
-                loadedConfigId = config.id
+                setActiveConfig(config)
                 bottomSheet.dismiss()
-                Snackbar.make(containerView, getString(R.string.config_loaded, config.name), Snackbar.LENGTH_SHORT).show()
             },
             onEditClick = { config ->
                 showAddEditConfigSheet(config = config)
@@ -758,6 +828,7 @@ class MainActivity : AppCompatActivity(),
             onDeleteClick = { config ->
                 lastDeletedConfig = config
                 configRepository.delete(config.id)
+                if (activeConfig?.id == config.id) setActiveConfig(null)
                 val updatedList = configRepository.getAll()
                 (recyclerView.adapter as? SavedConfigsAdapter)?.submitList(updatedList)
                 emptyState.visibility = if (updatedList.isEmpty()) View.VISIBLE else View.GONE
@@ -809,78 +880,43 @@ class MainActivity : AppCompatActivity(),
         return if (scheme != null && scheme in KNOWN_PROXY_SCHEMES) scheme else "http"
     }
 
-    private fun parseProxyData(): ProxyData? {
-        val input = hostEditText.text?.trim()?.toString() ?: return null
-        if (input.isEmpty()) return null
-        val matchResult = proxyRegex.find(input) ?: return null
-        val (proxyType, proxyUser, proxyPass, proxyHost, proxyPort) = matchResult.destructured
+    /**
+     * Parses a pasted/typed [user:pass@]host:port (optionally scheme-prefixed)
+     * into an ephemeral ProxyConfig (id == ""). Accepts "socks5h://" as a typed
+     * prefix for backward compat, but normalizes it to socks5 + Remote DNS on
+     * (see ProxyConfig.normalized -- socks5h was never a real tun2socks
+     * protocol). Returns null if it can't be parsed. ss/ssh/relay have
+     * structured fields, so those come via the editor, not paste.
+     */
+    private fun adhocConfigFromUrl(input: String): ProxyConfig? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return null
+        val match = proxyRegex.find(trimmed) ?: return null
+        val (proxyType, proxyUser, proxyPass, proxyHost, proxyPort) = match.destructured
         val port = proxyPort.toIntOrNull() ?: return null
-        return ProxyData(
-            proxyType = if (proxyType.isNotEmpty()) proxyType else "http",
-            proxyUser = proxyUser.takeIf { it.isNotEmpty() },
-            proxyPass = proxyPass.takeIf { it.isNotEmpty() },
-            proxyHost = proxyHost,
-            proxyPort = port
-        )
+        if (port < 1 || port > 65535 || !isValidHost(proxyHost)) return null
+        val protocol = if (proxyType.isNotEmpty()) proxyType else "http"
+        val hasAuth = proxyUser.isNotEmpty() && proxyPass.isNotEmpty()
+        return ProxyConfig(
+            id = "",
+            name = "",
+            protocol = protocol,
+            host = proxyHost,
+            port = port,
+            authEnabled = hasAuth,
+            username = if (hasAuth) proxyUser else null,
+            password = if (hasAuth) proxyPass else null,
+            createdAt = System.currentTimeMillis()
+        ).normalized()
     }
 
-    private fun parseProxy(): String? {
-        val input = hostEditText.text?.trim()?.toString()
-        if (input.isNullOrEmpty()) {
-            hostLayout.error = getString(R.string.error_empty_input)
-            return null
-        }
-
-        // If the input already names one of tun2socks's protocols
-        // explicitly, trust it verbatim rather than trying to decompose it:
-        // some (ss://method:password@..., ssh://...?privateKeyFile=...)
-        // don't fit the simple [user:pass@]host:port shape the fallback
-        // parse below assumes.
-        val schemeMatch = schemeRegex.find(input)
-        if (schemeMatch != null && schemeMatch.groupValues[1].lowercase() in KNOWN_PROXY_SCHEMES) {
-            hostLayout.error = null
-            return input
-        }
-
-        val matchResult = proxyRegex.find(input)
-        if (matchResult == null) {
-            hostLayout.error = getString(R.string.error_bad_format)
-            return null
-        }
-
-        val (proxyType, proxyUser, proxyPass, proxyHost, proxyPort) = matchResult.destructured
-        val port = proxyPort.toIntOrNull()
-        if (port == null || port < 1 || port > 65535) {
-            hostLayout.error = getString(R.string.error_port_range)
-            return null
-        }
-
-        if (!isValidHost(proxyHost)) {
-            hostLayout.error = getString(R.string.error_host_invalid)
-            return null
-        }
-
-        hostLayout.error = null
-        val data = ProxyData(
-            proxyType = if (proxyType.isNotEmpty()) proxyType else "http",
-            proxyUser = proxyUser.takeIf { it.isNotEmpty() },
-            proxyPass = proxyPass.takeIf { it.isNotEmpty() },
-            proxyHost = proxyHost,
-            proxyPort = port
-        )
-
-        return buildString {
-            append("${data.proxyType}://")
-            if (data.proxyUser != null && data.proxyPass != null) {
-                append("${data.proxyUser}:${data.proxyPass}@")
-            }
-            append("${data.proxyHost}:${data.proxyPort}")
-        }
-    }
+    /** Auto-generates a display name for a config the user didn't name, e.g. "SOCKS5 1.2.3.4". */
+    private fun autoConfigName(protocol: ProxyProtocol, host: String): String =
+        "${protocolDisplayName(protocol)} $host"
 
     // --- VPN Control ---
 
-    private fun startVpn(proxy: String) {
+    private fun startVpn(proxy: String, remoteDns: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(
                 this, POST_NOTIFICATIONS
             ) != PackageManager.PERMISSION_GRANTED
@@ -890,14 +926,9 @@ class MainActivity : AppCompatActivity(),
             )
         }
 
-        // Persist the Remote DNS toggle so the VPN service can read it
-        PreferenceManager.getDefaultSharedPreferences(this)
-            .edit()
-            .putBoolean(PREF_REMOTE_DNS, remoteDnsSwitch.isChecked)
-            .apply()
-
         pendingProxy = proxy
         intentVPNService?.putExtra("data", proxy)
+        intentVPNService?.putExtra(Tun2SocksVpnService.EXTRA_REMOTE_DNS, remoteDns)
         val intent = VpnService.prepare(this)
         if (intent != null) {
             startActivityForResult(intent, VPN_REQUEST_CODE)
@@ -905,10 +936,9 @@ class MainActivity : AppCompatActivity(),
             startService(intentVPNService)
         }
 
-        // Store proxy details
+        // Store masked proxy for display/logging.
         val maskedProxy = Tun2SocksVpnService.maskProxyUrl(proxy)
         PreferenceManager.getDefaultSharedPreferences(this).edit()
-            .putString(PREF_USER_CONFIG, hostEditText.text.toString())
             .putString(PREF_FORMATTED_CONFIG, maskedProxy)
             .apply()
 
@@ -962,7 +992,8 @@ class MainActivity : AppCompatActivity(),
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             R.id.action_rotation -> showRotationSettings()
-            R.id.action_test_proxy -> testProxyConnection()
+            R.id.action_test_proxy -> activeConfig?.let { testProxyConnection(it) }
+                ?: Snackbar.make(containerView, R.string.active_proxy_none_subtitle, Snackbar.LENGTH_SHORT).show()
             R.id.action_connection_log -> showConnectionLog()
             R.id.action_import -> showImportDialog()
             R.id.action_activity_settings -> startActivity(Intent(this, SettingsActivity::class.java))
@@ -998,17 +1029,11 @@ class MainActivity : AppCompatActivity(),
 
     // --- Proxy Health Check ---
 
-    private fun testProxyConnection() {
-        val parsed = parseProxyData()
-        if (parsed == null) {
-            hostLayout.error = getString(R.string.error_bad_format)
-            return
-        }
-        hostLayout.error = null
+    private fun testProxyConnection(config: ProxyConfig) {
         Snackbar.make(containerView, R.string.health_testing, Snackbar.LENGTH_SHORT).show()
 
         Thread {
-            val result = ProxyHealthCheck.test(parsed.proxyHost, parsed.proxyPort)
+            val result = ProxyHealthCheck.test(config.host, config.port)
             runOnUiThread {
                 if (result.reachable) {
                     Snackbar.make(containerView, getString(R.string.health_success, result.latencyMs.toInt()), Snackbar.LENGTH_LONG).show()
@@ -1168,10 +1193,11 @@ class MainActivity : AppCompatActivity(),
                 sheet.dismiss()
                 Snackbar.make(containerView, getString(R.string.rotation_started, configCount), Snackbar.LENGTH_SHORT).show()
                 if (firstConfig != null) {
-                    hostEditText.setText(
-                        if (firstConfig.requiresKeyFile) firstConfig.displayAddress else firstConfig.proxyAddress
+                    setActiveConfig(firstConfig)
+                    startVpn(
+                        ProxyUrlBuilder.build(this, firstConfig),
+                        firstConfig.effectiveRemoteDns(globalRemoteDnsDefault())
                     )
-                    startVpn(ProxyUrlBuilder.build(this, firstConfig))
                 }
             } else {
                 rotationManager.disable()
@@ -1231,10 +1257,10 @@ class MainActivity : AppCompatActivity(),
     private fun checkClipboardForProxy() {
         if (currentVpnState != VpnState.DISCONNECTED) return
         val detected = clipboardDetector.checkClipboard() ?: return
+        val adhoc = adhocConfigFromUrl(detected) ?: return
         Snackbar.make(containerView, getString(R.string.clipboard_detected), Snackbar.LENGTH_LONG)
             .setAction(R.string.clipboard_action_use) {
-                hostEditText.setText(detected)
-                hostLayout.error = null
+                setActiveConfig(adhoc)
             }
             .show()
     }
@@ -1331,17 +1357,6 @@ class MainActivity : AppCompatActivity(),
                 }
             }
         }
-    }
-
-    @SuppressLint("SetTextI18n", "DefaultLocale")
-    private fun loadHostPort() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val userConfig = prefs.getString(PREF_USER_CONFIG, "")
-        if (TextUtils.isEmpty(userConfig)) {
-            hostEditText.setText(String.format("%s:%s", getString(R.string.ip), getString(R.string.port)))
-            return
-        }
-        hostEditText.setText(userConfig)
     }
 
     override fun onRequestPermissionsResult(

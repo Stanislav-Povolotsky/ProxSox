@@ -40,7 +40,6 @@
                     android:id="@+id/status_progress"
                     android:layout_width="16dp"
                     android:layout_height="16dp"
-                    android:layout_marginStart="0dp"
                     android:visibility="gone"
                     app:indicatorColor="@color/colorWarning"
                     app:indicatorSize="16dp"
@@ -56,14 +55,6 @@
                     android:textColor="@color/colorOnSurface"
                     android:textSize="15sp"
                     android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/status_proxy"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/colorOnBackground"
-                    android:textSize="12sp"
-                    tools:text="socks5://***@1.2.3.4:1080" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_recheck_proxy"
@@ -87,101 +78,185 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Proxy Input Card -->
+        <!-- Active proxy section label -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginBottom="8dp"
+            android:letterSpacing="0.1"
+            android:text="@string/active_proxy_label"
+            android:textAllCaps="true"
+            android:textColor="@color/colorOnBackground"
+            android:textSize="12sp" />
+
+        <!-- Active proxy tile -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/active_proxy_card"
             style="@style/Widget.ProxSox.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp">
+            android:layout_marginBottom="16dp"
+            android:clickable="true"
+            android:focusable="true"
+            app:rippleColor="#204FC3F7">
 
-            <LinearLayout
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+                android:layout_height="wrap_content">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="12dp"
-                    android:letterSpacing="0.1"
-                    android:text="@string/proxy_address_label"
-                    android:textAllCaps="true"
-                    android:textColor="@color/colorOnBackground"
-                    android:textSize="13sp" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/host_layout"
-                    style="@style/Widget.ProxSox.TextInputLayout"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    app:errorEnabled="true">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/host"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="@string/host_hint"
-                        android:inputType="text"
-                        android:maxLines="1"
-                        android:singleLine="true"
-                        android:textColor="@color/colorOnSurface"
-                        android:textSize="15sp" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <!-- Save / Load buttons row -->
+                <!-- Filled state -->
                 <LinearLayout
+                    android:id="@+id/active_filled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_save"
-                        style="@style/Widget.ProxSox.Button.Text"
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="@string/btn_new_config"
-                        android:textSize="13sp"
-                        app:icon="@android:drawable/ic_input_add"
-                        app:iconSize="16dp"
-                        app:iconTint="@color/colorSecondary" />
+                        android:layout_weight="1"
+                        android:orientation="vertical">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_load"
-                        style="@style/Widget.ProxSox.Button.Text"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_saved_configs"
-                        android:textSize="13sp"
-                        app:icon="@android:drawable/ic_menu_recent_history"
-                        app:iconSize="16dp"
-                        app:iconTint="@color/colorSecondary" />
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="4dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:id="@+id/active_name"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:textColor="@color/colorOnSurface"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                tools:text="Home server" />
+
+                            <TextView
+                                android:id="@+id/active_badge"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="8dp"
+                                android:background="@drawable/bg_type_badge"
+                                android:textAllCaps="true"
+                                android:textColor="@color/colorSecondary"
+                                android:textSize="10sp"
+                                android:textStyle="bold"
+                                tools:text="SOCKS5" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/active_address"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:textColor="@color/colorOnBackground"
+                            android:textSize="13sp"
+                            tools:text="socks5://***@1.2.3.4:1080" />
+
+                        <TextView
+                            android:id="@+id/active_meta"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:textColor="@color/colorSecondary"
+                            android:textSize="11sp"
+                            tools:text="Remote DNS · on" />
+
+                    </LinearLayout>
+
+                    <ImageButton
+                        android:id="@+id/btn_active_more"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:layout_marginStart="4dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/content_desc_more"
+                        android:src="@drawable/ic_more_vert" />
 
                 </LinearLayout>
 
-                <!-- Remote DNS toggle -->
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switch_remote_dns"
+                <!-- Empty state -->
+                <LinearLayout
+                    android:id="@+id/active_empty"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@string/remote_dns_label"
-                    android:textColor="@color/colorOnSurface"
-                    android:textSize="14sp"
-                    app:thumbTint="@color/colorSecondary"
-                    app:trackTintMode="src_atop" />
+                    android:orientation="vertical"
+                    android:padding="16dp"
+                    android:visibility="gone">
 
-            </LinearLayout>
+                    <TextView
+                        android:id="@+id/active_empty_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/active_proxy_none_title"
+                        android:textColor="@color/colorOnSurface"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/active_proxy_none_subtitle"
+                        android:textColor="@color/colorOnBackground"
+                        android:textSize="13sp" />
+
+                </LinearLayout>
+
+            </FrameLayout>
 
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Action row: New / Saved -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_new"
+                style="@style/Widget.ProxSox.ToggleButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:text="@string/btn_new"
+                app:icon="@android:drawable/ic_input_add"
+                app:iconGravity="textStart"
+                app:iconSize="18dp"
+                app:iconTint="@color/colorSecondary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_load"
+                style="@style/Widget.ProxSox.ToggleButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:text="@string/btn_saved"
+                app:icon="@android:drawable/ic_menu_recent_history"
+                app:iconGravity="textStart"
+                app:iconSize="18dp"
+                app:iconTint="@color/colorSecondary" />
+
+        </LinearLayout>
 
         <!-- Spacer -->
         <View
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:minHeight="24dp" />
 
         <!-- Connect Button -->
         <com.google.android.material.button.MaterialButton

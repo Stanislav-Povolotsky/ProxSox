@@ -3,6 +3,7 @@ package tun.proxy.util
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import tun.proxy.model.ProxyConfig
+import tun.proxy.model.normalized
 import java.util.UUID
 
 data class ImportResult(
@@ -62,11 +63,14 @@ object ConfigImporter {
         val password = map["password"]?.toString() ?: map["pass"]?.toString()
         val authEnabled = !username.isNullOrEmpty() && !password.isNullOrEmpty()
 
+        // "socks5h" isn't a real tun2socks protocol (see ProxyConfig.normalized) --
+        // keep it through this raw switch and let .normalized() below turn it
+        // into socks5 + Remote DNS on, rather than silently losing that intent.
         return ProxyConfig(
             id = UUID.randomUUID().toString(),
             name = name,
             protocol = when {
-                protocol.startsWith("socks5h") -> "socks5"
+                protocol.startsWith("socks5h") -> "socks5h"
                 protocol.contains("socks")     -> "socks5"
                 protocol == "http"             -> "http"
                 else                           -> "socks5"
@@ -77,7 +81,7 @@ object ConfigImporter {
             username = if (authEnabled) username else null,
             password = if (authEnabled) password else null,
             createdAt = System.currentTimeMillis()
-        )
+        ).normalized()
     }
 
     private fun proxyUrlToConfig(url: String, defaultName: String): ProxyConfig {
@@ -86,7 +90,7 @@ object ConfigImporter {
         val (type, user, pass, host, port) = match.destructured
         val authEnabled = user.isNotEmpty() && pass.isNotEmpty()
         val protocol = when (type) {
-            "socks5h" -> "socks5h"
+            "socks5h" -> "socks5h" // normalized() below turns this into socks5 + Remote DNS on
             "socks5"  -> "socks5"
             else      -> "http"
         }
@@ -101,6 +105,6 @@ object ConfigImporter {
             username = if (authEnabled) user else null,
             password = if (authEnabled) pass else null,
             createdAt = System.currentTimeMillis()
-        )
+        ).normalized()
     }
 }

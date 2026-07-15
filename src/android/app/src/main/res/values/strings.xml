@@ -4,7 +4,7 @@
     <!-- Main Activity -->
     <string name="notify_title">Proxy is running</string>
     <string name="notify_msg">Proxy is running</string>
-    <string name="notify_vpn_active">VPN active — routing traffic through proxy</string>
+    <string name="notify_vpn_active">VPN active - routing traffic through proxy</string>
     <string name="start">Start</string>
     <string name="stop">Stop</string>
     <string name="msg_start_failed">Start failed</string>
@@ -31,7 +31,6 @@
     <string name="config_saved">Configuration saved</string>
     <string name="config_updated">Configuration updated</string>
     <string name="config_deleted">Configuration deleted</string>
-    <string name="config_loaded">Loaded: %s</string>
     <string name="empty_saved_configs">No saved configurations</string>
     <string name="btn_add_new">Add New</string>
 
@@ -44,7 +43,7 @@
     <string name="auth_toggle_label">Requires Authentication</string>
     <string name="username_label">Username</string>
     <string name="password_label">Password</string>
-    <string name="config_name_label">Configuration Name</string>
+    <string name="config_name_label">Name (optional)</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_undo">Undo</string>
 
@@ -90,13 +89,13 @@
     <!-- Failover -->
     <string name="failover_label">Backup Proxy (optional)</string>
     <string name="failover_hint">Used if primary proxy fails</string>
-    <string name="failover_activated">Primary proxy failed — switched to backup</string>
+    <string name="failover_activated">Primary proxy failed - switched to backup</string>
 
     <!-- Network -->
-    <string name="network_reconnecting">Network restored — reconnecting VPN\u2026</string>
+    <string name="network_reconnecting">Network restored - reconnecting VPN\u2026</string>
 
     <!-- QR import -->
-    <string name="qr_import_failed">Invalid QR code — could not import configuration</string>
+    <string name="qr_import_failed">Invalid QR code - could not import configuration</string>
 
     <!-- Connection Log -->
     <string name="log_title">Connection Log</string>
@@ -117,7 +116,7 @@
     <string name="rotation_empty">No configs added to rotation yet</string>
     <string name="rotation_add_config">Add Config to Rotation</string>
     <string name="rotation_remove">Remove from rotation</string>
-    <string name="rotation_started">Rotation started — %d configs</string>
+    <string name="rotation_started">Rotation started - %d configs</string>
     <string name="rotation_stopped">Rotation stopped</string>
     <string name="rotation_need_configs">Add at least 2 configs to rotate</string>
     <string name="rotation_pick_title">Select Config</string>
@@ -137,7 +136,7 @@
 
     <!-- Quick Settings Tile -->
     <string name="tile_connected">VPN Active</string>
-    <string name="tile_disconnected">VPN Off — Tap to open</string>
+    <string name="tile_disconnected">VPN Off - Tap to open</string>
 
     <!-- Accessibility -->
     <string name="status_indicator_desc">Connection status indicator</string>
@@ -153,7 +152,6 @@
     <string name="badge_http">HTTP</string>
     <string name="badge_socks4">SOCKS4</string>
     <string name="badge_socks5">SOCKS5</string>
-    <string name="badge_socks5h">SOCKS5H</string>
     <string name="badge_ss">Shadowsocks</string>
     <string name="badge_ssh">SSH</string>
     <string name="badge_relay">Relay</string>
@@ -170,7 +168,8 @@
     <string name="btn_import_key_file">Import from file</string>
     <string name="key_file_imported">Private key loaded from file</string>
     <string name="key_file_import_failed">Could not read that file</string>
-    <string name="relay_nodelay_label">Disable Nagle\'s algorithm (nodelay)</string>
+    <string name="relay_nodelay_label">Send relay handshake immediately</string>
+    <string name="relay_nodelay_hint">Relay-protocol option: send the connect handshake right away instead of bundling it with the first data (adds one round-trip). Not related to TCP Nagle.</string>
     <string name="error_cipher_required">Select a cipher</string>
     <string name="error_ss_password_required">Password is required</string>
     <string name="error_ssh_username_required">Username is required</string>
@@ -179,15 +178,41 @@
 
     <!-- Remote DNS -->
     <string name="remote_dns_label">Remote DNS (resolve on proxy server)</string>
-    <string name="remote_dns_hint">When enabled, DNS queries are resolved on the proxy server side. Automatically enabled for SOCKS5H proxies.</string>
+    <string name="remote_dns_section_label">Remote DNS</string>
+    <string name="remote_dns_state_default">Default</string>
+    <string name="remote_dns_state_on">On</string>
+    <string name="remote_dns_state_off">Off</string>
+    <string name="remote_dns_override_hint">Resolve DNS on the proxy server. “Default” follows the app-wide setting.</string>
+    <string name="remote_dns_unsupported_hint">Remote DNS isn\'t supported for this protocol by tun2socks — DNS is always resolved locally.</string>
+    <string name="remote_dns_meta_on">Remote DNS · on</string>
+    <string name="remote_dns_meta_off">Remote DNS · off</string>
+    <string name="pref_remote_dns_default">Remote DNS by default</string>
+    <string name="pref_remote_dns_default_summary">Resolve DNS on the proxy server for proxies set to “Default”. Each proxy can override this.</string>
     <string name="pref_fake_ip_subnet">Fake IP Subnet</string>
     <string name="pref_fake_ip_subnet_summary">Subnet used to allocate temporary IPs for Remote DNS (default: 10.255.0.0/16)</string>
 
+    <!-- Active proxy tile -->
+    <string name="active_proxy_label">Active proxy</string>
+    <string name="active_proxy_none_title">No proxy selected</string>
+    <string name="active_proxy_none_subtitle">Tap New to create one, or pick a saved proxy</string>
+    <string name="active_proxy_custom_name">Custom address</string>
+    <string name="content_desc_more">More options</string>
+    <string name="menu_connect">Connect</string>
+    <string name="menu_edit">Edit</string>
+    <string name="menu_delete">Delete</string>
+    <string name="menu_share">Share</string>
+    <string name="menu_test">Test reachability</string>
+    <string name="delete_config_confirm_title">Delete this proxy?</string>
+    <string name="delete_config_confirm_message">“%s” will be removed from your saved proxies.</string>
+    <string name="active_cleared">Removed</string>
+    <string name="btn_new">New</string>
+    <string name="btn_saved">Saved</string>
+
     <!-- Onboarding -->
     <string name="onboarding_welcome">Welcome to ProxSox</string>
-    <string name="onboarding_subtitle">Route your Android traffic through any HTTP or SOCKS5 proxy in three simple steps.</string>
-    <string name="onboarding_step1_title">Enter your proxy</string>
-    <string name="onboarding_step1_desc">Type an address or tap New Config to build one with the form.</string>
+    <string name="onboarding_subtitle">Route your Android traffic through any HTTP, SOCKS, Shadowsocks, SSH or Relay proxy in three simple steps.</string>
+    <string name="onboarding_step1_title">Add your proxy</string>
+    <string name="onboarding_step1_desc">Tap New to add a proxy, or pick one you saved earlier.</string>
     <string name="onboarding_step2_title">Tap Connect</string>
     <string name="onboarding_step2_desc">Accept the VPN permission and your traffic starts routing through the proxy.</string>
     <string name="onboarding_step3_title">Save and share</string>

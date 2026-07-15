@@ -8,6 +8,7 @@ import androidx.security.crypto.MasterKeys
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import tun.proxy.model.ProxyConfig
+import tun.proxy.model.normalized
 
 class ConfigRepository(context: Context) {
     private val prefs: SharedPreferences
@@ -44,7 +45,7 @@ class ConfigRepository(context: Context) {
             list?.filter { config ->
                 config.id != null && config.name != null &&
                     config.protocol != null && config.host != null
-            } ?: emptyList()
+            }?.map { it.normalized() } ?: emptyList()
         } catch (e: Exception) {
             Log.w("ConfigRepository", "Failed to parse saved configs", e)
             emptyList()

@@ -44,13 +44,18 @@ class Tun2SocksVpnService : VpnService() {
 
     private var networkMonitor: NetworkMonitor? = null
     private var failoverProxy: String? = null
+    // Effective Remote DNS for the current connection, resolved in onStartCommand.
+    @Volatile private var effectiveRemoteDns: Boolean = true
 
     companion object {
         const val ACTION_STOP_SERVICE = "${BuildConfig.APPLICATION_ID}.STOP_VPN_SERVICE"
         /** Re-runs just the proxy reachability probe, without restarting the tunnel. */
         const val ACTION_RECHECK_PROXY = "${BuildConfig.APPLICATION_ID}.RECHECK_PROXY"
+        /** Intent extra (Boolean): effective Remote DNS for this connection. */
+        const val EXTRA_REMOTE_DNS = "remote_dns"
         private const val PREF_LAST_PROXY = "last_proxy_data"
         private const val PREF_FAILOVER_PROXY = "failover_proxy_data"
+        private const val PREF_EFFECTIVE_REMOTE_DNS = "effective_remote_dns"
         private const val PREFS_NAME = "vpn_service_prefs"
 
         // Remote DNS preferences (stored in default SharedPreferences, not encrypted)
@@ -179,6 +184,7 @@ class Tun2SocksVpnService : VpnService() {
 
         proxyData = data
         persistProxy(data)
+        effectiveRemoteDns = resolveRemoteDns(intent)
 
         // Failover proxy (optional)
         val failover = intent?.extras?.getString("failover")
@@ -269,9 +275,10 @@ class Tun2SocksVpnService : VpnService() {
         Log.d(TAG, "startVpn ${proxyDetails}")
         proxyData = proxyDetails
 
-        // Read Remote DNS configuration from default SharedPreferences
+        // Effective Remote DNS was resolved per-connection in onStartCommand
+        // (config override -> global default). Fake-IP subnet is still global.
         val defaultPrefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val remoteDnsEnabled = defaultPrefs.getBoolean(PREF_REMOTE_DNS_ENABLED, false)
+        val remoteDnsEnabled = effectiveRemoteDns
         val fakeSubnet = defaultPrefs.getString(PREF_FAKE_IP_SUBNET, DEFAULT_FAKE_IP_SUBNET)
                          ?: DEFAULT_FAKE_IP_SUBNET
 
@@ -411,6 +418,24 @@ class Tun2SocksVpnService : VpnService() {
 
     fun isRunning(): Boolean {
         return vpnThread?.isAlive == true
+    }
+
+    /**
+     * Resolves the effective Remote DNS for this start. Prefers the intent
+     * extra set by the UI/rotation (config override -> global default already
+     * applied there); persists it so restart paths that lack the extra (system
+     * relaunch, NetworkMonitor auto-reconnect) reuse the same value. Falls back
+     * to the persisted value, then the global default (default on).
+     */
+    private fun resolveRemoteDns(intent: Intent?): Boolean {
+        if (intent != null && intent.hasExtra(EXTRA_REMOTE_DNS)) {
+            val v = intent.getBooleanExtra(EXTRA_REMOTE_DNS, true)
+            getEncryptedPrefs().edit().putBoolean(PREF_EFFECTIVE_REMOTE_DNS, v).apply()
+            return v
+        }
+        val globalDefault = PreferenceManager.getDefaultSharedPreferences(this)
+            .getBoolean(PREF_REMOTE_DNS_ENABLED, true)
+        return getEncryptedPrefs().getBoolean(PREF_EFFECTIVE_REMOTE_DNS, globalDefault)
     }
 
     /** Direct-dial reachability check against the configured proxy's host:port. */
