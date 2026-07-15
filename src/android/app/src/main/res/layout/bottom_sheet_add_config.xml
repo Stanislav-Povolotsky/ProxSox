@@ -412,7 +412,7 @@
             </LinearLayout>
 
             <!-- Remote DNS: only protocols tun2socks can hand a hostname to
-                 resolve itself (http/socks4/socks5/ss) -- not ssh/relay. -->
+                 resolve itself (http/socks4/socks5/ss), not ssh/relay. -->
             <LinearLayout
                 android:id="@+id/group_remote_dns"
                 android:layout_width="match_parent"
